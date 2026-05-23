@@ -327,6 +327,7 @@ def build_insights(final: pd.DataFrame, sabc: pd.DataFrame, status: pd.DataFrame
     overstock = final[final["Inventory Status"] == "Overstock"].sort_values("Adjusted Future Inventory", ascending=False)
     core = final[final["SABC Type"].isin(["S", "A"])]
     no_sales = final[final["Inventory Status"] == "No Sales / Review"]
+    top_sku_table = final.sort_values("Qty", ascending=False).head(5).copy()
     return {
         "total_skus": total_skus,
         "total_qty": total_qty,
@@ -339,6 +340,7 @@ def build_insights(final: pd.DataFrame, sabc: pd.DataFrame, status: pd.DataFrame
         "no_sales_count": len(no_sales),
         "core_sku_count": len(core),
         "core_qty_share": 0 if total_qty == 0 else float(core["Qty"].sum() / total_qty),
+        "top_sku_table": top_sku_table,
         "urgent_table": urgent.head(10),
         "overstock_table": overstock.head(10),
     }
@@ -571,8 +573,16 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "MilleFee") -
     doc.add_heading("Executive Summary", level=1)
     add_bullet(doc, f"Analyzed {insights['total_skus']:,} SKUs with {insights['total_qty']:,.0f} units sold in the latest available 12-month window.")
     add_bullet(doc, f"Top SKU: {insights['top_sku']} - {insights['top_product']} ({insights['top_qty']:,.0f} units, {insights['top_share']:.1%} of sales).")
-    add_bullet(doc, f"S/A core SKUs represent {insights['core_sku_count']:,} SKUs and {insights['core_qty_share']:.1%} of quantity sold.")
+    add_bullet(
+        doc,
+        f"S/A core SKUs represent {insights['core_sku_count']:,} SKUs and {insights['core_qty_share']:.1%} of quantity sold. "
+        "These items should be treated as the commercial priority group: protect availability, review PO timing first, and use them as the anchor products for channel growth."
+    )
     add_bullet(doc, f"{insights['urgent_count']:,} SKUs need immediate replenishment attention; {insights['overstock_count']:,} SKUs show overstock risk.")
+
+    doc.add_heading("Top 5 SKUs by 12-Month Sales", level=2)
+    top_cols = ["Product SKU", "Product Name", "Qty", "Contribution %", "Cumulative %", "SABC Type", "Coverage", "Inventory Status", "Action"]
+    add_table(doc, insights["top_sku_table"][top_cols], max_rows=5)
 
     doc.add_heading("Data Sources", level=1)
     add_key_value_paragraph(doc, "Sales Report", "SKU-level quantity sold, product name, and month/year when available.")
@@ -626,6 +636,9 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "MilleFee") -
     doc.add_heading("Label / Packaging Optimization", level=1)
     add_bullet(doc, "Prioritize bilingual label clarity for S/A products first, because these SKUs carry the highest sales impact.")
     add_bullet(doc, "Standardize shade names, claims, and barcode visibility to reduce store and warehouse handling friction.")
+    add_bullet(doc, "Example: for lip tint or blush SKUs, keep the shade number, shade name, barcode, and English/French product type in the same visual area so store staff can identify variants quickly.")
+    add_bullet(doc, "Example: add a small shelf-ready shade sticker or color band on outer cartons for fast warehouse picking and retail replenishment.")
+    add_bullet(doc, "Example: create one consistent Canadian compliance label template for ingredients, distributor information, net content, and caution text, then apply it first to S/A SKUs.")
 
     doc.add_heading("Channel Growth Plan", level=1)
     add_bullet(doc, "Use S/A SKUs as traffic drivers for marketplace, boutique retail, and social commerce campaigns.")
