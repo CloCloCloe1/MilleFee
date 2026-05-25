@@ -211,6 +211,75 @@ def apply_catalogue(final: pd.DataFrame, catalogue_df: pd.DataFrame | None) -> t
     return merged, detected
 
 
+def classify_lifecycle_status(value: object) -> str:
+    text = "" if pd.isna(value) else str(value).strip()
+    lower = text.lower()
+    compact = re.sub(r"\s+", "", lower)
+    if not compact:
+        return ""
+    if any(token in compact for token in ["停产", "discontinued", "discontinue", "phaseout", "phase-out", "廃番"]):
+        return "Discontinued / Phase Out"
+    if any(token in compact for token in ["renewal", "renew", "更新", "改版", "新版"]):
+        return "Renewal"
+    if ("展架" in compact or "display" in compact or "tester" in compact) and any(token in compact for token in ["少", "low", "short", "不足"]):
+        return "Display Low Stock"
+    if ("展架" in compact or "display" in compact or "tester" in compact) and any(token in compact for token in ["无", "none", "no", "outofstock", "out-of-stock", "缺"]):
+        return "Display No Stock"
+    if any(token in compact for token in ["new", "comingsoon", "coming", "新品"]):
+        return "New / Coming Soon"
+    return "Active / Review"
+
+
+def lifecycle_action(row: pd.Series) -> str:
+    lifecycle = row.get("Lifecycle Type", "")
+    qty = float(row.get("Qty", 0) or 0)
+    sabc = str(row.get("SABC Type", ""))
+    inventory_status = str(row.get("Inventory Status", ""))
+    if lifecycle == "New / Coming Soon":
+        return "Launch Plan / Initial PO"
+    if lifecycle == "Discontinued / Phase Out":
+        return "Stop PO / Phase Out" if qty > 0 else "Do Not Launch / Archive"
+    if lifecycle == "Display Low Stock":
+        return "Request Display Support" if sabc in {"S", "A"} else "Review Display Need"
+    if lifecycle == "Display No Stock":
+        return "Urgent Display Support" if sabc in {"S", "A"} else "Confirm Display Strategy"
+    if lifecycle == "Renewal":
+        return "Version Transition Plan"
+    return str(row.get("Action", "")) or inventory_status
+
+
+def lifecycle_note(row: pd.Series) -> str:
+    lifecycle = row.get("Lifecycle Type", "")
+    qty = float(row.get("Qty", 0) or 0)
+    if lifecycle == "New / Coming Soon":
+        return "New SKU: no historical sales is expected; evaluate launch quantity, channel fit, and display support."
+    if lifecycle == "Discontinued / Phase Out" and qty > 0:
+        return "Historical sales exists but catalogue indicates discontinued/phase-out; avoid replenishment and plan replacement or sell-through."
+    if lifecycle == "Discontinued / Phase Out":
+        return "Catalogue indicates discontinued/phase-out; keep out of future launch or replenishment planning."
+    if lifecycle == "Display Low Stock":
+        return "Display/tester stock is limited; sales may be constrained by weak shelf presence."
+    if lifecycle == "Display No Stock":
+        return "Display/tester stock is missing; request manufacturer support before channel push."
+    if lifecycle == "Renewal":
+        return "Renewal item: manage old/new version transition and avoid duplicated inventory."
+    return ""
+
+
+def apply_lifecycle_strategy(final: pd.DataFrame) -> pd.DataFrame:
+    if "Recommendation / Lifecycle Status" not in final.columns:
+        return final
+    work = final.copy()
+    work["Lifecycle Type"] = work["Recommendation / Lifecycle Status"].map(classify_lifecycle_status)
+    work["Lifecycle Note"] = work.apply(lifecycle_note, axis=1)
+    work["Lifecycle Action"] = work.apply(lifecycle_action, axis=1)
+    override_mask = work["Lifecycle Type"].isin(
+        ["New / Coming Soon", "Discontinued / Phase Out", "Display Low Stock", "Display No Stock", "Renewal"]
+    )
+    work.loc[override_mask, "Action"] = work.loc[override_mask, "Lifecycle Action"]
+    return work
+
+
 def build_analysis(
     sales_file: str | Path | BinaryIO | BytesIO,
     stock_file: str | Path | BinaryIO | BytesIO,
@@ -273,6 +342,7 @@ def build_analysis(
     }
     final["Action"] = final["Inventory Status"].map(action_map)
     final, catalogue_cols = apply_catalogue(final, catalogue_df)
+    final = apply_lifecycle_strategy(final)
 
     base_cols = [
         "Product SKU",
@@ -290,6 +360,8 @@ def build_analysis(
         "Inventory Status",
         "Action",
     ]
+    lifecycle_cols = [c for c in ["Recommendation / Lifecycle Status", "Lifecycle Type", "Lifecycle Action", "Lifecycle Note"] if c in final.columns]
+    base_cols = base_cols + lifecycle_cols
     extra_cols = [c for c in final.columns if c not in base_cols + ["On Hand"]]
     final = final[base_cols + extra_cols]
 
@@ -371,12 +443,38 @@ def build_catalogue_insights(final: pd.DataFrame) -> dict:
 
     if "Recommendation / Lifecycle Status" in work.columns:
         lifecycle = (
-            work.groupby("Recommendation / Lifecycle Status", dropna=False)
+            work.groupby(["Lifecycle Type", "Recommendation / Lifecycle Status"], dropna=False)
             .agg(SKU_Count=("Product SKU", "count"), Qty=("Qty", "sum"), Avg_Coverage=("Coverage", "mean"))
             .reset_index()
             .sort_values("Qty", ascending=False)
         )
         insights["lifecycle_summary"] = lifecycle.head(10)
+
+    if "Lifecycle Type" in work.columns:
+        lifecycle_cols = [
+            "Product SKU",
+            "Product Name",
+            "Qty",
+            "SABC Type",
+            "Inventory Status",
+            "Action",
+            "Recommendation / Lifecycle Status",
+            "Lifecycle Type",
+            "Lifecycle Note",
+        ]
+        lifecycle_cols = [c for c in lifecycle_cols if c in work.columns]
+        new_skus = work[work["Lifecycle Type"] == "New / Coming Soon"].copy()
+        discontinued = work[(work["Lifecycle Type"] == "Discontinued / Phase Out") & (work["Qty"] > 0)].copy()
+        display_risk = work[work["Lifecycle Type"].isin(["Display Low Stock", "Display No Stock"])].copy()
+        renewal = work[work["Lifecycle Type"] == "Renewal"].copy()
+        insights["new_sku_count"] = len(new_skus)
+        insights["discontinued_with_sales_count"] = len(discontinued)
+        insights["display_risk_count"] = len(display_risk)
+        insights["renewal_count"] = len(renewal)
+        insights["new_sku_table"] = new_skus.sort_values(["SABC Type", "Product SKU"])[lifecycle_cols].head(10)
+        insights["discontinued_with_sales_table"] = discontinued.sort_values("Qty", ascending=False)[lifecycle_cols].head(10)
+        insights["display_risk_table"] = display_risk.sort_values(["SABC Type", "Qty"], ascending=[True, False])[lifecycle_cols].head(10)
+        insights["renewal_table"] = renewal.sort_values(["SABC Type", "Qty"], ascending=[True, False])[lifecycle_cols].head(10)
 
     if {"RP USD", "Wholesale Price"}.issubset(work.columns):
         work["RP USD"] = pd.to_numeric(work["RP USD"], errors="coerce")
@@ -497,6 +595,14 @@ def generate_excel(result: AnalysisResult) -> bytes:
             sheets.append(("Category Summary", result.insights["category_summary"], "CategorySummaryTable", ["Qty Share"]))
         if "lifecycle_summary" in result.insights:
             sheets.append(("Lifecycle Summary", result.insights["lifecycle_summary"], "LifecycleSummaryTable", []))
+        if "new_sku_table" in result.insights and not result.insights["new_sku_table"].empty:
+            sheets.append(("New Coming Soon", result.insights["new_sku_table"], "NewComingSoonTable", []))
+        if "discontinued_with_sales_table" in result.insights and not result.insights["discontinued_with_sales_table"].empty:
+            sheets.append(("Discontinued Sales", result.insights["discontinued_with_sales_table"], "DiscontinuedSalesTable", []))
+        if "display_risk_table" in result.insights and not result.insights["display_risk_table"].empty:
+            sheets.append(("Display Risk", result.insights["display_risk_table"], "DisplayRiskTable", []))
+        if "renewal_table" in result.insights and not result.insights["renewal_table"].empty:
+            sheets.append(("Renewal Transition", result.insights["renewal_table"], "RenewalTransitionTable", []))
         if "top_value_table" in result.insights:
             sheets.append(("Top Value SKUs", result.insights["top_value_table"], "TopValueTable", ["Margin %"]))
         if "low_margin_table" in result.insights:
@@ -639,6 +745,25 @@ def add_catalogue_report_sections(doc: Document, insights: dict):
         doc.add_paragraph("This view helps compare current lifecycle labels against real sales and coverage behavior.")
         add_table(doc, insights["lifecycle_summary"], max_rows=10)
 
+    if any(insights.get(key, 0) for key in ["new_sku_count", "discontinued_with_sales_count", "display_risk_count", "renewal_count"]):
+        doc.add_heading("Lifecycle / Recommendation Strategy", level=2)
+        add_bullet(doc, f"New / Coming Soon SKUs: {insights.get('new_sku_count', 0):,}. These should be treated as launch planning items, not as failed no-sales SKUs.")
+        add_bullet(doc, f"Discontinued / phase-out SKUs with sales history: {insights.get('discontinued_with_sales_count', 0):,}. These should not receive normal replenishment recommendations.")
+        add_bullet(doc, f"Display low/no stock risks: {insights.get('display_risk_count', 0):,}. These may need tester, display, or shelf support from the manufacturer.")
+        add_bullet(doc, f"Renewal SKUs: {insights.get('renewal_count', 0):,}. These need old/new version transition planning.")
+        if "new_sku_table" in insights and not insights["new_sku_table"].empty:
+            doc.add_heading("New / Coming Soon Launch Candidates", level=2)
+            add_table(doc, insights["new_sku_table"], max_rows=10)
+        if "discontinued_with_sales_table" in insights and not insights["discontinued_with_sales_table"].empty:
+            doc.add_heading("Discontinued SKUs With Sales History", level=2)
+            add_table(doc, insights["discontinued_with_sales_table"], max_rows=10)
+        if "display_risk_table" in insights and not insights["display_risk_table"].empty:
+            doc.add_heading("Display / Tester Support Risk", level=2)
+            add_table(doc, insights["display_risk_table"], max_rows=10)
+        if "renewal_table" in insights and not insights["renewal_table"].empty:
+            doc.add_heading("Renewal Transition Plan", level=2)
+            add_table(doc, insights["renewal_table"], max_rows=10)
+
     if "priced_sku_count" in insights:
         doc.add_heading("Pricing and Margin Analysis", level=2)
         add_bullet(doc, f"Priced SKUs matched: {insights.get('priced_sku_count', 0):,}.")
@@ -703,6 +828,15 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "MilleFee") -
         )
     if has_catalogue and insights.get("moq_risk_count", 0) > 0:
         add_bullet(doc, f"{insights['moq_risk_count']:,} SKUs show MOQ or outer-case risk, meaning case pack size may be too large versus current monthly sales velocity.")
+    if has_catalogue and any(insights.get(key, 0) for key in ["new_sku_count", "discontinued_with_sales_count", "display_risk_count", "renewal_count"]):
+        add_bullet(
+            doc,
+            f"Catalogue recommendation flags changed the business action for lifecycle-sensitive SKUs: "
+            f"{insights.get('new_sku_count', 0):,} new/coming soon, "
+            f"{insights.get('discontinued_with_sales_count', 0):,} discontinued with sales history, "
+            f"{insights.get('display_risk_count', 0):,} display risk, and "
+            f"{insights.get('renewal_count', 0):,} renewal items."
+        )
 
     doc.add_heading("Top 5 SKUs by 12-Month Sales", level=2)
     top_cols = ["Product SKU", "Product Name", "Qty", "Contribution %", "Cumulative %", "SABC Type", "Coverage", "Inventory Status", "Action"]
@@ -727,6 +861,9 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "MilleFee") -
             ["Coverage", "Adjusted Future Inventory / Avg Monthly Sales"],
             ["Inventory Status", "Stockout, Urgent, Healthy, Monitor, Overstock, or No Sales / Review"],
             ["Action", "Operational recommendation linked to inventory status"],
+            ["Lifecycle Type", "Normalized catalogue recommendation status, such as New / Coming Soon, Discontinued, Display Risk, or Renewal"],
+            ["Lifecycle Action", "Business action override driven by catalogue recommendation when applicable"],
+            ["Lifecycle Note", "Explanation of why catalogue recommendation changes the SKU strategy"],
         ],
         columns=["Column", "Meaning"],
     )
@@ -761,6 +898,7 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "MilleFee") -
     add_bullet(doc, "Month 4-6: review SKU lifecycle, discontinue low-sales SKUs where sell-through does not improve, and reallocate budget to hero SKUs.")
     if has_catalogue:
         add_bullet(doc, "Catalogue-enhanced plan: combine sales velocity with price, margin, category, and case-pack data before finalizing replenishment, discontinuation, and new product launch decisions.")
+        add_bullet(doc, "Lifecycle plan: separate new launch SKUs, discontinued SKUs, display risk SKUs, and renewal SKUs before issuing POs so replenishment does not conflict with the catalogue recommendation.")
 
     doc.add_heading("Label / Packaging Optimization", level=1)
     add_bullet(doc, "Prioritize bilingual label clarity for S/A products first, because these SKUs carry the highest sales impact.")
@@ -779,12 +917,16 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "MilleFee") -
     if has_catalogue:
         add_bullet(doc, "Use category and margin data to prioritize launches in product families that already show high sales contribution and healthy margin.")
         add_bullet(doc, "Avoid launching new SKUs with large outer-case quantities unless expected monthly demand can absorb the MOQ within a reasonable coverage window.")
+        add_bullet(doc, "For NEW / COMING SOON items, judge them by launch readiness, display support, price/margin, and channel fit instead of historical sales alone.")
+        add_bullet(doc, "For Renewal items, define a transition window: stop heavy PO on the old version, prepare the renewed SKU, and prevent duplicate overstock.")
 
     doc.add_heading("Manufacturer Support Needed", level=1)
     add_bullet(doc, "Confirm replenishment lead time, MOQ flexibility, tester/display support, and launch assets for priority SKUs.")
     add_bullet(doc, "Request packaging files and ingredient/claim documentation for faster Canadian channel onboarding.")
     if has_catalogue:
         add_bullet(doc, "Request support on MOQ breaks, case-pack flexibility, and wholesale pricing for SKUs with high demand but low margin or high case-pack risk.")
+        add_bullet(doc, "For display low/no stock items, request tester/display replenishment separately from sellable unit replenishment, especially for S/A SKUs.")
+        add_bullet(doc, "For discontinued SKUs that still have sales demand, ask the manufacturer for replacement SKU mapping or final-buy availability.")
 
     doc.add_heading("Key Business Conclusion", level=1)
     doc.add_paragraph(
