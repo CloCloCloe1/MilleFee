@@ -104,6 +104,88 @@ def read_excel_any(file: str | Path | BinaryIO | BytesIO) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
+def read_excel_with_detected_header(file: str | Path | BinaryIO | BytesIO) -> pd.DataFrame:
+    xl = pd.ExcelFile(file)
+    frames = []
+    for sheet in xl.sheet_names:
+        raw = pd.read_excel(xl, sheet_name=sheet, header=None)
+        if raw.empty:
+            continue
+        header_idx = detect_header_row(raw)
+        if header_idx is None:
+            df = pd.read_excel(xl, sheet_name=sheet)
+        else:
+            df = build_dataframe_from_header(raw, header_idx)
+        if not df.empty:
+            frames.append(df)
+    if not frames:
+        raise ValueError("The uploaded Excel file does not contain readable rows.")
+    return pd.concat(frames, ignore_index=True)
+
+
+def detect_header_row(raw: pd.DataFrame) -> int | None:
+    header_tokens = {
+        "sku",
+        "productsku",
+        "productcode",
+        "code",
+        "jan",
+        "barcode",
+        "recommendation",
+        "category",
+        "productname",
+        "wholesaleprice",
+        "outercase",
+    }
+    best_idx = None
+    best_score = 0
+    for idx, row in raw.head(30).iterrows():
+        normalized_values = {normalize_header(v) for v in row.dropna().tolist()}
+        score = sum(1 for token in header_tokens if token in normalized_values)
+        if score > best_score:
+            best_score = score
+            best_idx = idx
+    return best_idx if best_score >= 2 else None
+
+
+def build_dataframe_from_header(raw: pd.DataFrame, header_idx: int) -> pd.DataFrame:
+    header = raw.iloc[header_idx].tolist()
+    subheader = raw.iloc[header_idx + 1].tolist() if header_idx + 1 < len(raw) else [None] * len(header)
+    columns = []
+    last_parent = ""
+    for parent, child in zip(header, subheader):
+        parent_text = "" if pd.isna(parent) else str(parent).replace("\n", " ").strip()
+        child_text = "" if pd.isna(child) else str(child).replace("\n", " ").strip()
+        if parent_text:
+            last_parent = parent_text
+        if parent_text and child_text:
+            name = f"{parent_text} {child_text}"
+        elif parent_text:
+            name = parent_text
+        elif child_text and last_parent:
+            name = f"{last_parent} {child_text}"
+        elif child_text:
+            name = child_text
+        else:
+            name = f"Column {len(columns) + 1}"
+        columns.append(name)
+    df = raw.iloc[header_idx + 1 :].copy()
+    df.columns = dedupe_columns(columns)
+    df = df.dropna(how="all")
+    return df
+
+
+def dedupe_columns(columns: list[str]) -> list[str]:
+    seen = {}
+    output = []
+    for col in columns:
+        base = col.strip() or "Column"
+        count = seen.get(base, 0)
+        seen[base] = count + 1
+        output.append(base if count == 0 else f"{base}.{count + 1}")
+    return output
+
+
 def latest_12_months(df: pd.DataFrame, date_col: str | None) -> pd.DataFrame:
     if date_col is None:
         return df.copy()
@@ -180,16 +262,17 @@ def aggregate_stock(stock_df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 def apply_catalogue(final: pd.DataFrame, catalogue_df: pd.DataFrame | None) -> tuple[pd.DataFrame, dict]:
     if catalogue_df is None:
         return final, {}
-    sku_col = detect_column(catalogue_df, ["Product SKU", "SKU", "Product Code", "Code", "Barcode"], label="Catalogue SKU")
+    sku_col = detect_column(catalogue_df, ["Product SKU", "SKU", "JAN", "Barcode", "Product Code", "Product Code Product Code", "Code"], label="Catalogue SKU")
     cat = catalogue_df.copy()
     cat["_sku"] = cat[sku_col].map(normalize_sku)
     optional_map = {
         "Category": ["Category", "Product Category", "Collection"],
         "Recommendation / Lifecycle Status": ["Recommendation / Lifecycle Status", "Lifecycle Status", "Recommendation", "Status"],
         "RP USD": ["RP USD", "Retail Price", "Retail USD", "MSRP"],
-        "Wholesale Price": ["Wholesale Price", "Wholesale", "WSP", "Cost"],
-        "Inner Case": ["Inner Case", "Inner", "Inner Qty"],
-        "Outer Case": ["Outer Case", "Outer", "Outer Qty"],
+        "Wholesale Price": ["Wholesale Price", "Wholesale price (USD)", "Wholesale", "WSP", "Cost"],
+        "Wholesale Price JPY": ["Wholesale price (JPY)", "Wholesale Price JPY", "Wholesale price JPY"],
+        "Inner Case": ["Inner Case", "Quantity Inner case", "Inner", "Inner Qty"],
+        "Outer Case": ["Outer Case", "Quantity Outer case", "Outer", "Outer Qty"],
     }
     detected = {"catalogue_sku": sku_col}
     keep = ["_sku"]
@@ -287,7 +370,7 @@ def build_analysis(
 ) -> AnalysisResult:
     sales_df = read_excel_any(sales_file)
     stock_df = read_excel_any(stock_file)
-    catalogue_df = read_excel_any(catalogue_file) if catalogue_file else None
+    catalogue_df = read_excel_with_detected_header(catalogue_file) if catalogue_file else None
 
     sales, sales_cols = aggregate_sales(sales_df)
     stock, stock_cols = aggregate_stock(stock_df)
@@ -494,6 +577,16 @@ def build_catalogue_insights(final: pd.DataFrame) -> dict:
             ["Product SKU", "Product Name", "Qty", "Wholesale Price", "Estimated Wholesale Sales", "Margin %", "SABC Type", "Inventory Status"]
         ].head(10)
 
+    if "Wholesale Price JPY" in work.columns:
+        work["Wholesale Price JPY"] = pd.to_numeric(work["Wholesale Price JPY"], errors="coerce")
+        priced_jpy = work.dropna(subset=["Wholesale Price JPY"]).copy()
+        priced_jpy["Estimated Wholesale Sales JPY"] = priced_jpy["Qty"] * priced_jpy["Wholesale Price JPY"]
+        insights["priced_jpy_sku_count"] = len(priced_jpy)
+        insights["estimated_wholesale_sales_jpy"] = float(priced_jpy["Estimated Wholesale Sales JPY"].sum()) if not priced_jpy.empty else 0
+        insights["top_value_jpy_table"] = priced_jpy.sort_values("Estimated Wholesale Sales JPY", ascending=False)[
+            ["Product SKU", "Product Name", "Qty", "Wholesale Price JPY", "Estimated Wholesale Sales JPY", "SABC Type", "Inventory Status", "Action"]
+        ].head(10)
+
     if "MOQ risk" in work.columns:
         moq = work[work["MOQ risk"].astype(str).str.len() > 0].copy()
         insights["moq_risk_count"] = len(moq)
@@ -605,6 +698,8 @@ def generate_excel(result: AnalysisResult) -> bytes:
             sheets.append(("Renewal Transition", result.insights["renewal_table"], "RenewalTransitionTable", []))
         if "top_value_table" in result.insights:
             sheets.append(("Top Value SKUs", result.insights["top_value_table"], "TopValueTable", ["Margin %"]))
+        if "top_value_jpy_table" in result.insights:
+            sheets.append(("Top Value JPY", result.insights["top_value_jpy_table"], "TopValueJPYTable", []))
         if "low_margin_table" in result.insights:
             sheets.append(("Low Margin Review", result.insights["low_margin_table"], "LowMarginTable", ["Margin %"]))
         if "moq_risk_table" in result.insights and not result.insights["moq_risk_table"].empty:
@@ -780,6 +875,15 @@ def add_catalogue_report_sections(doc: Document, insights: dict):
             doc.add_heading("Low-Margin Review", level=2)
             doc.add_paragraph("Low-margin SKUs should be reviewed before heavy promotion, bundle discounts, or large replenishment commitments.")
             add_table(doc, insights["low_margin_table"], max_rows=10)
+
+    if "priced_jpy_sku_count" in insights:
+        doc.add_heading("Wholesale Value Analysis (JPY)", level=2)
+        add_bullet(doc, f"Wholesale JPY price matched for {insights.get('priced_jpy_sku_count', 0):,} SKUs.")
+        add_bullet(doc, f"Estimated 12-month wholesale sales value: JPY {insights.get('estimated_wholesale_sales_jpy', 0):,.0f}.")
+        add_bullet(doc, "Margin is not calculated from this file when RP is in USD and wholesale is in JPY, because mixed currencies would create a misleading margin.")
+        if "top_value_jpy_table" in insights and not insights["top_value_jpy_table"].empty:
+            doc.add_heading("Top Wholesale Value SKUs (JPY)", level=2)
+            add_table(doc, insights["top_value_jpy_table"], max_rows=10)
 
     if insights.get("moq_risk_count", 0) > 0 and "moq_risk_table" in insights:
         doc.add_heading("MOQ / Case Pack Risk", level=2)
