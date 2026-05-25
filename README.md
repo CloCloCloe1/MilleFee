@@ -14,6 +14,17 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## Login
+
+The app starts with a default admin account:
+
+```text
+Username: admin
+Password: admin123
+```
+
+Change this password after the first login. Admin users can add users, delete users, reset user passwords, and change their own password. Passwords are stored as hashes, so the app does not show plaintext passwords.
+
 ## Inputs
 
 Required:

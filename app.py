@@ -5,11 +5,14 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
+from auth import authenticate, change_own_password, create_user, delete_user, list_users, reset_password
 from bp_generator import generate_outputs
 
 
 st.set_page_config(page_title="MilleFee BP Generator", page_icon="MF", layout="wide")
 
+
+ZH = "\u4e2d\u6587"
 
 TEXT = {
     "English": {
@@ -48,43 +51,83 @@ TEXT = {
         "detected_column": "Detected Column",
         "column_notes": "Column explanation",
         "column_notes_help": "Open this section to understand how each column is calculated and used.",
+        "login_title": "Sign in",
+        "username": "Username",
+        "password": "Password",
+        "login": "Log in",
+        "logout": "Log out",
+        "bad_login": "Incorrect username or password.",
+        "signed_in": "Signed in as",
+        "page": "Page",
+        "bp_page": "BP Generator",
+        "manage_users": "Manage Users",
+        "add_user": "Add user",
+        "delete_user": "Delete user",
+        "reset_password": "Reset user password",
+        "change_password": "Change my password",
+        "role": "Role",
+        "new_password": "New password",
+        "current_password": "Current password",
+        "confirm": "Confirm",
+        "security_note": "Passwords are stored as hashes. Admin can reset a user's password but cannot view the original password.",
+        "default_admin_note": "Default admin is admin / admin123. Please change it after first login.",
     },
-    "中文": {
-        "title": "MilleFee 商务分析生成器",
-        "caption": "上传销售报表和库存报表，自动生成 Excel 分析文件和 Word 商务分析报告。",
-        "language": "语言",
-        "files": "上传文件",
-        "sales": "上传销售报表",
-        "stock": "上传库存报表",
-        "catalogue": "可选：上传产品目录 / 价格表",
-        "brand": "品牌名称",
-        "generate": "生成分析",
-        "missing_files": "请先上传销售报表和库存报表。",
-        "ready": "文件已准备好。点击“生成分析”后即可创建 BP 输出文件。",
-        "spinner": "正在清洗、合并、分析并生成文件...",
-        "failed": "生成失败",
-        "total_skus": "SKU 总数",
-        "qty_sold": "过去12个月销量",
-        "urgent": "紧急 / 缺货",
-        "overstock": "库存过高 SKU",
-        "download_excel": "下载 MilleFee BP Data.xlsx",
-        "download_word": "下载 MilleFee Business Analysis.docx",
-        "tab_final": "最终分析",
-        "tab_summaries": "汇总",
-        "tab_priority": "重点 SKU",
-        "tab_detected": "识别列名",
-        "final_analysis": "最终分析",
-        "sabc_summary": "SABC 销售分类汇总",
-        "action_summary": "行动建议汇总",
-        "inventory_summary": "库存状态汇总",
-        "matrix": "SABC x 库存状态矩阵",
-        "replenishment": "补货优先级",
-        "overstock_risk": "库存过高风险",
-        "auto_detected": "自动识别的列名",
-        "field": "字段",
-        "detected_column": "识别到的列名",
-        "column_notes": "字段解释",
-        "column_notes_help": "点开这里可以查看每一列的计算方式和业务含义。",
+    ZH: {
+        "title": "\u004d\u0069\u006c\u006c\u0065\u0046\u0065\u0065 \u5546\u52a1\u5206\u6790\u751f\u6210\u5668",
+        "caption": "\u4e0a\u4f20\u9500\u552e\u62a5\u8868\u548c\u5e93\u5b58\u62a5\u8868\uff0c\u81ea\u52a8\u751f\u6210 Excel \u5206\u6790\u6587\u4ef6\u548c Word \u5546\u52a1\u5206\u6790\u62a5\u544a\u3002",
+        "language": "\u8bed\u8a00",
+        "files": "\u4e0a\u4f20\u6587\u4ef6",
+        "sales": "\u4e0a\u4f20\u9500\u552e\u62a5\u8868",
+        "stock": "\u4e0a\u4f20\u5e93\u5b58\u62a5\u8868",
+        "catalogue": "\u53ef\u9009\uff1a\u4e0a\u4f20\u4ea7\u54c1\u76ee\u5f55 / \u4ef7\u683c\u8868",
+        "brand": "\u54c1\u724c\u540d\u79f0",
+        "generate": "\u751f\u6210\u5206\u6790",
+        "missing_files": "\u8bf7\u5148\u4e0a\u4f20\u9500\u552e\u62a5\u8868\u548c\u5e93\u5b58\u62a5\u8868\u3002",
+        "ready": "\u6587\u4ef6\u5df2\u51c6\u5907\u597d\u3002\u70b9\u51fb\u201c\u751f\u6210\u5206\u6790\u201d\u540e\u5373\u53ef\u521b\u5efa BP \u8f93\u51fa\u6587\u4ef6\u3002",
+        "spinner": "\u6b63\u5728\u6e05\u6d17\u3001\u5408\u5e76\u3001\u5206\u6790\u5e76\u751f\u6210\u6587\u4ef6...",
+        "failed": "\u751f\u6210\u5931\u8d25",
+        "total_skus": "SKU \u603b\u6570",
+        "qty_sold": "\u8fc7\u53bb12\u4e2a\u6708\u9500\u91cf",
+        "urgent": "\u7d27\u6025 / \u7f3a\u8d27",
+        "overstock": "\u5e93\u5b58\u8fc7\u9ad8 SKU",
+        "download_excel": "\u4e0b\u8f7d MilleFee BP Data.xlsx",
+        "download_word": "\u4e0b\u8f7d MilleFee Business Analysis.docx",
+        "tab_final": "\u6700\u7ec8\u5206\u6790",
+        "tab_summaries": "\u6c47\u603b",
+        "tab_priority": "\u91cd\u70b9 SKU",
+        "tab_detected": "\u8bc6\u522b\u5217\u540d",
+        "final_analysis": "\u6700\u7ec8\u5206\u6790",
+        "sabc_summary": "SABC \u9500\u552e\u5206\u7c7b\u6c47\u603b",
+        "action_summary": "\u884c\u52a8\u5efa\u8bae\u6c47\u603b",
+        "inventory_summary": "\u5e93\u5b58\u72b6\u6001\u6c47\u603b",
+        "matrix": "SABC x \u5e93\u5b58\u72b6\u6001\u77e9\u9635",
+        "replenishment": "\u8865\u8d27\u4f18\u5148\u7ea7",
+        "overstock_risk": "\u5e93\u5b58\u8fc7\u9ad8\u98ce\u9669",
+        "auto_detected": "\u81ea\u52a8\u8bc6\u522b\u7684\u5217\u540d",
+        "field": "\u5b57\u6bb5",
+        "detected_column": "\u8bc6\u522b\u5230\u7684\u5217\u540d",
+        "column_notes": "\u5b57\u6bb5\u89e3\u91ca",
+        "column_notes_help": "\u70b9\u5f00\u8fd9\u91cc\u53ef\u4ee5\u67e5\u770b\u6bcf\u4e00\u5217\u7684\u8ba1\u7b97\u65b9\u5f0f\u548c\u4e1a\u52a1\u542b\u4e49\u3002",
+        "login_title": "\u767b\u5f55",
+        "username": "\u7528\u6237\u540d",
+        "password": "\u5bc6\u7801",
+        "login": "\u767b\u5f55",
+        "logout": "\u9000\u51fa\u767b\u5f55",
+        "bad_login": "\u7528\u6237\u540d\u6216\u5bc6\u7801\u4e0d\u6b63\u786e\u3002",
+        "signed_in": "\u5df2\u767b\u5f55",
+        "page": "\u9875\u9762",
+        "bp_page": "BP \u751f\u6210\u5668",
+        "manage_users": "\u7528\u6237\u7ba1\u7406",
+        "add_user": "\u65b0\u589e\u7528\u6237",
+        "delete_user": "\u5220\u9664\u7528\u6237",
+        "reset_password": "\u91cd\u7f6e\u7528\u6237\u5bc6\u7801",
+        "change_password": "\u4fee\u6539\u6211\u7684\u5bc6\u7801",
+        "role": "\u89d2\u8272",
+        "new_password": "\u65b0\u5bc6\u7801",
+        "current_password": "\u5f53\u524d\u5bc6\u7801",
+        "confirm": "\u786e\u8ba4",
+        "security_note": "\u5bc6\u7801\u4f1a\u52a0\u5bc6\u4fdd\u5b58\u3002Admin \u53ef\u4ee5\u91cd\u7f6e\u7528\u6237\u5bc6\u7801\uff0c\u4f46\u4e0d\u4f1a\u663e\u793a\u539f\u59cb\u660e\u6587\u5bc6\u7801\u3002",
+        "default_admin_note": "\u9ed8\u8ba4 admin \u8d26\u53f7\u662f admin / admin123\u3002\u9996\u6b21\u767b\u5f55\u540e\u8bf7\u5c3d\u5feb\u4fee\u6539\u3002",
     },
 }
 
@@ -104,7 +147,7 @@ EXPLANATIONS = {
             "Adjusted Future Inventory": "MAX(0, Future Inventory). Negative stock is treated as zero usable stock.",
             "Avg Monthly Sales": "Qty divided by 12. This represents average monthly sales based on the past 12 months.",
             "Coverage": "Adjusted Future Inventory divided by Avg Monthly Sales. It estimates how many months current/future stock can support.",
-            "Inventory Status": "Stock health label based on coverage: Stockout, Urgent, Healthy, Monitor, Overstock, or No Sales / Review.",
+            "Inventory Status": "Stock health label based on coverage.",
             "Action": "Suggested business action based on Inventory Status.",
         },
         "SABC Summary": {
@@ -131,11 +174,7 @@ EXPLANATIONS = {
             "Future_Inventory": "Total adjusted future inventory for SKUs assigned to this action.",
             "Qty Share": "Qty assigned to this action divided by total Qty.",
         },
-        "Matrix": {
-            "Rows": "SABC sales priority type.",
-            "Columns": "Inventory Status groups.",
-            "Values": "Number of SKUs in each SABC and Inventory Status combination.",
-        },
+        "Matrix": {"Rows": "SABC sales priority type.", "Columns": "Inventory Status groups.", "Values": "Number of SKUs in each combination."},
         "Priority": {
             "Qty": "Past 12-month sales quantity.",
             "Adjusted Future Inventory": "Usable future inventory after preventing negative stock.",
@@ -143,68 +182,58 @@ EXPLANATIONS = {
             "Inventory Status": "Current inventory risk label.",
             "Action": "Recommended next business action.",
         },
-        "Detected Columns": {
-            "Field": "Internal field needed by the app.",
-            "Detected Column": "Column name automatically matched from the uploaded Excel file.",
-        },
+        "Detected Columns": {"Field": "Internal field needed by the app.", "Detected Column": "Column name automatically matched from the uploaded Excel file."},
     },
-    "中文": {
+    ZH: {
         "Final Analysis": {
-            "Product SKU": "用于连接 Sales 和 Stock 两份报表的唯一产品编码。",
-            "Product Name": "产品名称，优先来自销售报表；如果销售报表缺失，则使用库存报表名称。",
-            "Qty": "过去 12 个月的总销售数量。",
-            "Contribution %": "单个 SKU 的 Qty / 全部 SKU 的总 Qty，用来看该 SKU 对销量的贡献。",
-            "Cumulative %": "按照 Qty 从高到低排序后，Contribution % 的累计值，用来判断 S/A/B/C 分类。",
-            "SABC Type": "销售优先级：S 是最核心爆品，A 是核心 SKU，B 是中腰部，C 是长尾 SKU。",
-            "Available": "库存报表中的当前可用库存。",
-            "Incoming": "库存报表中的在途/即将入库库存。",
-            "Future Inventory": "Available + Incoming，表示未来可用库存预估。",
-            "Adjusted Future Inventory": "MAX(0, Future Inventory)，如果系统库存为负数，则按 0 可用库存处理。",
-            "Avg Monthly Sales": "Qty / 12，基于过去 12 个月计算的平均月销量。",
-            "Coverage": "Adjusted Future Inventory / Avg Monthly Sales，表示库存大约还能支持几个月销售。",
-            "Inventory Status": "根据销量和 coverage 判断库存状态：缺货、紧急、健康、观察、库存过高或无销售/复核。",
-            "Action": "根据库存状态自动给出的业务动作建议。",
+            "Product SKU": "\u7528\u4e8e\u8fde\u63a5 Sales \u548c Stock \u4e24\u4efd\u62a5\u8868\u7684\u552f\u4e00\u4ea7\u54c1\u7f16\u7801\u3002",
+            "Product Name": "\u4ea7\u54c1\u540d\u79f0\uff0c\u4f18\u5148\u6765\u81ea\u9500\u552e\u62a5\u8868\u3002",
+            "Qty": "\u8fc7\u53bb 12 \u4e2a\u6708\u7684\u603b\u9500\u552e\u6570\u91cf\u3002",
+            "Contribution %": "\u5355\u4e2a SKU \u7684 Qty / \u5168\u90e8 SKU \u7684\u603b Qty\u3002",
+            "Cumulative %": "\u6309 Qty \u4ece\u9ad8\u5230\u4f4e\u6392\u5e8f\u540e\uff0cContribution % \u7684\u7d2f\u8ba1\u503c\u3002",
+            "SABC Type": "\u9500\u552e\u4f18\u5148\u7ea7\uff1aS/A \u662f\u6838\u5fc3 SKU\uff0cB/C \u662f\u4e2d\u957f\u5c3e SKU\u3002",
+            "Available": "\u5e93\u5b58\u62a5\u8868\u4e2d\u7684\u5f53\u524d\u53ef\u7528\u5e93\u5b58\u3002",
+            "Incoming": "\u5e93\u5b58\u62a5\u8868\u4e2d\u7684\u5728\u9014 / \u5373\u5c06\u5165\u5e93\u5e93\u5b58\u3002",
+            "Future Inventory": "Available + Incoming\uff0c\u8868\u793a\u672a\u6765\u53ef\u7528\u5e93\u5b58\u9884\u4f30\u3002",
+            "Adjusted Future Inventory": "MAX(0, Future Inventory)\uff0c\u8d1f\u5e93\u5b58\u6309 0 \u5904\u7406\u3002",
+            "Avg Monthly Sales": "Qty / 12\uff0c\u57fa\u4e8e\u8fc7\u53bb 12 \u4e2a\u6708\u8ba1\u7b97\u7684\u5e73\u5747\u6708\u9500\u91cf\u3002",
+            "Coverage": "Adjusted Future Inventory / Avg Monthly Sales\uff0c\u8868\u793a\u5e93\u5b58\u5927\u7ea6\u8fd8\u80fd\u652f\u6301\u51e0\u4e2a\u6708\u9500\u552e\u3002",
+            "Inventory Status": "\u6839\u636e\u9500\u91cf\u548c coverage \u5224\u65ad\u5e93\u5b58\u72b6\u6001\u3002",
+            "Action": "\u6839\u636e\u5e93\u5b58\u72b6\u6001\u81ea\u52a8\u7ed9\u51fa\u7684\u4e1a\u52a1\u5efa\u8bae\u3002",
         },
         "SABC Summary": {
-            "SABC Type": "根据累计销售贡献得到的销售优先级。",
-            "SKU_Count": "每个 SABC 分类下的 SKU 数量。",
-            "Qty": "该分类下所有 SKU 过去 12 个月销量合计。",
-            "Avg_Coverage": "该分类下 SKU 的平均库存覆盖月数。",
-            "Future_Inventory": "该分类下所有 SKU 的调整后未来库存合计。",
-            "Qty Share": "该分类 Qty / 全部 Qty。",
+            "SABC Type": "\u6839\u636e\u7d2f\u8ba1\u9500\u552e\u8d21\u732e\u5f97\u5230\u7684\u9500\u552e\u4f18\u5148\u7ea7\u3002",
+            "SKU_Count": "\u6bcf\u4e2a SABC \u5206\u7c7b\u4e0b\u7684 SKU \u6570\u91cf\u3002",
+            "Qty": "\u8be5\u5206\u7c7b\u4e0b\u6240\u6709 SKU \u8fc7\u53bb 12 \u4e2a\u6708\u9500\u91cf\u5408\u8ba1\u3002",
+            "Avg_Coverage": "\u8be5\u5206\u7c7b\u4e0b SKU \u7684\u5e73\u5747\u5e93\u5b58\u8986\u76d6\u6708\u6570\u3002",
+            "Future_Inventory": "\u8be5\u5206\u7c7b\u4e0b\u8c03\u6574\u540e\u672a\u6765\u5e93\u5b58\u5408\u8ba1\u3002",
+            "Qty Share": "\u8be5\u5206\u7c7b Qty / \u5168\u90e8 Qty\u3002",
         },
         "Inventory Status Summary": {
-            "Inventory Status": "根据 coverage 和销售需求得到的库存健康状态。",
-            "SKU_Count": "每个库存状态下的 SKU 数量。",
-            "Qty": "该库存状态下 SKU 的过去 12 个月销量合计。",
-            "Avg_Coverage": "该库存状态下 SKU 的平均库存覆盖月数。",
-            "Future_Inventory": "该库存状态下 SKU 的调整后未来库存合计。",
-            "Qty Share": "该库存状态 Qty / 全部 Qty。",
+            "Inventory Status": "\u6839\u636e coverage \u548c\u9500\u552e\u9700\u6c42\u5f97\u5230\u7684\u5e93\u5b58\u5065\u5eb7\u72b6\u6001\u3002",
+            "SKU_Count": "\u6bcf\u4e2a\u5e93\u5b58\u72b6\u6001\u4e0b\u7684 SKU \u6570\u91cf\u3002",
+            "Qty": "\u8be5\u5e93\u5b58\u72b6\u6001\u4e0b SKU \u7684\u8fc7\u53bb 12 \u4e2a\u6708\u9500\u91cf\u5408\u8ba1\u3002",
+            "Avg_Coverage": "\u8be5\u72b6\u6001\u4e0b SKU \u7684\u5e73\u5747\u5e93\u5b58\u8986\u76d6\u6708\u6570\u3002",
+            "Future_Inventory": "\u8be5\u72b6\u6001\u4e0b SKU \u7684\u8c03\u6574\u540e\u672a\u6765\u5e93\u5b58\u5408\u8ba1\u3002",
+            "Qty Share": "\u8be5\u72b6\u6001 Qty / \u5168\u90e8 Qty\u3002",
         },
         "Action Summary": {
-            "Action": "建议动作，例如 Replenish、Monitor、Review PO、Reduce PO 或 Review SKU。",
-            "SKU_Count": "被分配到该动作的 SKU 数量。",
-            "Qty": "该动作下 SKU 的过去 12 个月销量合计。",
-            "Avg_Coverage": "该动作下 SKU 的平均库存覆盖月数。",
-            "Future_Inventory": "该动作下 SKU 的调整后未来库存合计。",
-            "Qty Share": "该动作下 Qty / 全部 Qty。",
+            "Action": "\u5efa\u8bae\u52a8\u4f5c\uff0c\u4f8b\u5982 Replenish\u3001Monitor\u3001Reduce PO \u6216 Review SKU\u3002",
+            "SKU_Count": "\u88ab\u5206\u914d\u5230\u8be5\u52a8\u4f5c\u7684 SKU \u6570\u91cf\u3002",
+            "Qty": "\u8be5\u52a8\u4f5c\u4e0b SKU \u7684\u8fc7\u53bb 12 \u4e2a\u6708\u9500\u91cf\u5408\u8ba1\u3002",
+            "Avg_Coverage": "\u8be5\u52a8\u4f5c\u4e0b SKU \u7684\u5e73\u5747\u5e93\u5b58\u8986\u76d6\u6708\u6570\u3002",
+            "Future_Inventory": "\u8be5\u52a8\u4f5c\u4e0b SKU \u7684\u8c03\u6574\u540e\u672a\u6765\u5e93\u5b58\u5408\u8ba1\u3002",
+            "Qty Share": "\u8be5\u52a8\u4f5c Qty / \u5168\u90e8 Qty\u3002",
         },
-        "Matrix": {
-            "Rows": "SABC 销售优先级分类。",
-            "Columns": "库存状态分类。",
-            "Values": "每一个 SABC x 库存状态组合下的 SKU 数量。",
-        },
+        "Matrix": {"Rows": "SABC \u9500\u552e\u4f18\u5148\u7ea7\u5206\u7c7b\u3002", "Columns": "\u5e93\u5b58\u72b6\u6001\u5206\u7c7b\u3002", "Values": "\u6bcf\u4e2a\u7ec4\u5408\u4e0b\u7684 SKU \u6570\u91cf\u3002"},
         "Priority": {
-            "Qty": "过去 12 个月销售数量。",
-            "Adjusted Future Inventory": "剔除负库存后的可用未来库存。",
-            "Coverage": "基于平均月销量计算的库存覆盖月数。",
-            "Inventory Status": "当前库存风险标签。",
-            "Action": "建议下一步业务动作。",
+            "Qty": "\u8fc7\u53bb 12 \u4e2a\u6708\u9500\u552e\u6570\u91cf\u3002",
+            "Adjusted Future Inventory": "\u5254\u9664\u8d1f\u5e93\u5b58\u540e\u7684\u53ef\u7528\u672a\u6765\u5e93\u5b58\u3002",
+            "Coverage": "\u57fa\u4e8e\u5e73\u5747\u6708\u9500\u91cf\u8ba1\u7b97\u7684\u5e93\u5b58\u8986\u76d6\u6708\u6570\u3002",
+            "Inventory Status": "\u5f53\u524d\u5e93\u5b58\u98ce\u9669\u6807\u7b7e\u3002",
+            "Action": "\u5efa\u8bae\u4e0b\u4e00\u6b65\u4e1a\u52a1\u52a8\u4f5c\u3002",
         },
-        "Detected Columns": {
-            "Field": "系统内部需要识别的字段。",
-            "Detected Column": "从上传 Excel 中自动匹配到的列名。",
-        },
+        "Detected Columns": {"Field": "\u7cfb\u7edf\u5185\u90e8\u9700\u8981\u8bc6\u522b\u7684\u5b57\u6bb5\u3002", "Detected Column": "\u4ece\u4e0a\u4f20 Excel \u4e2d\u81ea\u52a8\u5339\u914d\u5230\u7684\u5217\u540d\u3002"},
     },
 }
 
@@ -224,158 +253,223 @@ def show_column_notes(language: str, table_key: str):
     title = TEXT[language]["column_notes"]
     help_text = TEXT[language]["column_notes_help"]
     with st.expander(f"{title} - {help_text}", expanded=False):
-        rows = [{"Column": key, "Explanation": value} for key, value in notes.items()]
-        if language == "中文":
-            rows = [{"列名": key, "解释": value} for key, value in notes.items()]
+        if language == ZH:
+            rows = [{"\u5217\u540d": key, "\u89e3\u91ca": value} for key, value in notes.items()]
+        else:
+            rows = [{"Column": key, "Explanation": value} for key, value in notes.items()]
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
-st.markdown(
-    """
-    <style>
-    .block-container {padding-top: 2rem; max-width: 1180px;}
-    h1, h2, h3 {letter-spacing: 0;}
-    div[data-testid="stMetric"] {
-        background: #f5f5f7;
-        border: 1px solid #e8e8ed;
-        border-radius: 8px;
-        padding: 14px 16px;
-    }
-    div[data-testid="stDownloadButton"] button, div[data-testid="stButton"] button {
-        border-radius: 8px;
-        border: 1px solid #0071e3;
-        background: #0071e3;
-        color: white;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+def apply_styles():
+    st.markdown(
+        """
+        <style>
+        .block-container {padding-top: 2rem; max-width: 1180px;}
+        h1, h2, h3 {letter-spacing: 0;}
+        div[data-testid="stMetric"] {
+            background: #f5f5f7;
+            border: 1px solid #e8e8ed;
+            border-radius: 8px;
+            padding: 14px 16px;
+        }
+        div[data-testid="stDownloadButton"] button, div[data-testid="stButton"] button {
+            border-radius: 8px;
+            border: 1px solid #0071e3;
+            background: #0071e3;
+            color: white;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def login_page(t: dict):
+    st.title(t["login_title"])
+    st.caption(t["default_admin_note"])
+    with st.form("login_form"):
+        username = st.text_input(t["username"])
+        password = st.text_input(t["password"], type="password")
+        submitted = st.form_submit_button(t["login"], use_container_width=True)
+    if submitted:
+        user = authenticate(username, password)
+        if user:
+            st.session_state["user"] = user
+            st.rerun()
+        st.error(t["bad_login"])
+
+
+def manage_users_page(t: dict):
+    st.title(t["manage_users"])
+    st.info(t["security_note"])
+    if st.session_state["user"].get("must_change_password"):
+        st.warning(t["default_admin_note"])
+
+    st.subheader(t["add_user"])
+    with st.form("add_user_form", clear_on_submit=True):
+        new_username = st.text_input(t["username"], key="new_user")
+        new_password = st.text_input(t["new_password"], type="password", key="new_password")
+        role = st.selectbox(t["role"], ["user", "admin"])
+        if st.form_submit_button(t["add_user"]):
+            ok, message = create_user(new_username, new_password, role)
+            st.success(message) if ok else st.error(message)
+
+    st.subheader(t["reset_password"])
+    users_df = pd.DataFrame(list_users())
+    st.dataframe(users_df, use_container_width=True, hide_index=True)
+    usernames = users_df["Username"].tolist() if not users_df.empty else []
+    with st.form("reset_password_form"):
+        reset_username = st.selectbox(t["username"], usernames, key="reset_user")
+        reset_new_password = st.text_input(t["new_password"], type="password", key="reset_password")
+        if st.form_submit_button(t["reset_password"]):
+            ok, message = reset_password(reset_username, reset_new_password)
+            st.success(message) if ok else st.error(message)
+
+    st.subheader(t["delete_user"])
+    with st.form("delete_user_form"):
+        delete_username = st.selectbox(t["username"], usernames, key="delete_user")
+        if st.form_submit_button(t["delete_user"]):
+            ok, message = delete_user(delete_username, st.session_state["user"]["username"])
+            st.success(message) if ok else st.error(message)
+
+    st.subheader(t["change_password"])
+    with st.form("change_own_password_form"):
+        current_password = st.text_input(t["current_password"], type="password")
+        own_new_password = st.text_input(t["new_password"], type="password", key="own_new_password")
+        if st.form_submit_button(t["change_password"]):
+            ok, message = change_own_password(st.session_state["user"]["username"], current_password, own_new_password)
+            if ok:
+                st.session_state["user"]["must_change_password"] = False
+                st.success(message)
+            else:
+                st.error(message)
+
+
+def bp_generator_page(t: dict, language: str):
+    st.title(t["title"])
+    st.caption(t["caption"])
+
+    with st.sidebar:
+        st.header(t["files"])
+        sales_file = st.file_uploader(t["sales"], type=["xlsx", "xls"], key="sales")
+        stock_file = st.file_uploader(t["stock"], type=["xlsx", "xls"], key="stock")
+        catalogue_file = st.file_uploader(t["catalogue"], type=["xlsx", "xls"], key="catalogue")
+        brand_name = st.text_input(t["brand"], value="MilleFee")
+        generate = st.button(t["generate"], type="primary", use_container_width=True)
+
+    if not sales_file or not stock_file:
+        st.info(t["missing_files"])
+        return
+
+    if generate:
+        with st.spinner(t["spinner"]):
+            try:
+                result, excel_bytes, word_bytes = generate_outputs(
+                    load_file(sales_file),
+                    load_file(stock_file),
+                    load_file(catalogue_file),
+                    brand_name=brand_name.strip() or "MilleFee",
+                )
+            except Exception as exc:
+                st.error(f"{t['failed']}: {exc}")
+                return
+
+        st.session_state["result"] = result
+        st.session_state["excel_bytes"] = excel_bytes
+        st.session_state["word_bytes"] = word_bytes
+
+    if "result" not in st.session_state:
+        st.warning(t["ready"])
+        return
+
+    result = st.session_state["result"]
+    insights = result.insights
+
+    cols = st.columns(4)
+    with cols[0]:
+        metric_card(t["total_skus"], f"{insights['total_skus']:,}")
+    with cols[1]:
+        metric_card(t["qty_sold"], f"{insights['total_qty']:,.0f}")
+    with cols[2]:
+        metric_card(t["urgent"], f"{insights['urgent_count']:,}")
+    with cols[3]:
+        metric_card(t["overstock"], f"{insights['overstock_count']:,}")
+
+    st.divider()
+    download_cols = st.columns(2)
+    with download_cols[0]:
+        st.download_button(t["download_excel"], data=st.session_state["excel_bytes"], file_name="MilleFee BP Data.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+    with download_cols[1]:
+        st.download_button(t["download_word"], data=st.session_state["word_bytes"], file_name="MilleFee Business Analysis.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+
+    tab1, tab2, tab3, tab4 = st.tabs([t["tab_final"], t["tab_summaries"], t["tab_priority"], t["tab_detected"]])
+    with tab1:
+        st.subheader(t["final_analysis"])
+        show_column_notes(language, "Final Analysis")
+        view = result.final.copy()
+        for col in ["Contribution %", "Cumulative %"]:
+            if col in view:
+                view[col] = view[col].map(lambda x: f"{x:.1%}" if pd.notna(x) else "")
+        if "Coverage" in view:
+            view["Coverage"] = view["Coverage"].map(lambda x: "" if pd.isna(x) else f"{x:,.2f}")
+        st.dataframe(view, use_container_width=True, height=520)
+
+    with tab2:
+        left, right = st.columns(2)
+        with left:
+            st.subheader(t["sabc_summary"])
+            show_column_notes(language, "SABC Summary")
+            st.dataframe(result.sabc_summary, use_container_width=True)
+            st.subheader(t["action_summary"])
+            show_column_notes(language, "Action Summary")
+            st.dataframe(result.action_summary, use_container_width=True)
+        with right:
+            st.subheader(t["inventory_summary"])
+            show_column_notes(language, "Inventory Status Summary")
+            st.dataframe(result.inventory_status_summary, use_container_width=True)
+            st.subheader(t["matrix"])
+            show_column_notes(language, "Matrix")
+            st.dataframe(result.matrix, use_container_width=True)
+
+    with tab3:
+        priority_cols = ["Product SKU", "Product Name", "Qty", "SABC Type", "Adjusted Future Inventory", "Coverage", "Inventory Status", "Action"]
+        st.subheader(t["replenishment"])
+        show_column_notes(language, "Priority")
+        st.dataframe(result.insights["urgent_table"][priority_cols], use_container_width=True)
+        st.subheader(t["overstock_risk"])
+        show_column_notes(language, "Priority")
+        st.dataframe(result.insights["overstock_table"][priority_cols], use_container_width=True)
+
+    with tab4:
+        st.subheader(t["auto_detected"])
+        show_column_notes(language, "Detected Columns")
+        detected = pd.DataFrame([{t["field"]: key, t["detected_column"]: value} for key, value in result.detected_columns.items()])
+        st.dataframe(detected, use_container_width=True, hide_index=True)
+
+
+apply_styles()
 
 with st.sidebar:
-    language = st.selectbox(TEXT["English"]["language"], ["English", "中文"], index=0)
+    language = st.selectbox(TEXT["English"]["language"], ["English", ZH], index=0)
 
 t = TEXT[language]
 
-st.title(t["title"])
-st.caption(t["caption"])
+if "user" not in st.session_state:
+    login_page(t)
+    st.stop()
 
 with st.sidebar:
-    st.header(t["files"])
-    sales_file = st.file_uploader(t["sales"], type=["xlsx", "xls"], key="sales")
-    stock_file = st.file_uploader(t["stock"], type=["xlsx", "xls"], key="stock")
-    catalogue_file = st.file_uploader(t["catalogue"], type=["xlsx", "xls"], key="catalogue")
-    brand_name = st.text_input(t["brand"], value="MilleFee")
-    generate = st.button(t["generate"], type="primary", use_container_width=True)
+    st.caption(f"{t['signed_in']}: {st.session_state['user']['username']} ({st.session_state['user']['role']})")
+    if st.button(t["logout"], use_container_width=True):
+        for key in ["user", "result", "excel_bytes", "word_bytes"]:
+            st.session_state.pop(key, None)
+        st.rerun()
 
-if not sales_file or not stock_file:
-    st.info(t["missing_files"])
-    st.stop()
-
-if generate:
-    with st.spinner(t["spinner"]):
-        try:
-            result, excel_bytes, word_bytes = generate_outputs(
-                load_file(sales_file),
-                load_file(stock_file),
-                load_file(catalogue_file),
-                brand_name=brand_name.strip() or "MilleFee",
-            )
-        except Exception as exc:
-            st.error(f"{t['failed']}: {exc}")
-            st.stop()
-
-    st.session_state["result"] = result
-    st.session_state["excel_bytes"] = excel_bytes
-    st.session_state["word_bytes"] = word_bytes
-
-if "result" not in st.session_state:
-    st.warning(t["ready"])
-    st.stop()
-
-result = st.session_state["result"]
-insights = result.insights
-
-cols = st.columns(4)
-with cols[0]:
-    metric_card(t["total_skus"], f"{insights['total_skus']:,}")
-with cols[1]:
-    metric_card(t["qty_sold"], f"{insights['total_qty']:,.0f}")
-with cols[2]:
-    metric_card(t["urgent"], f"{insights['urgent_count']:,}")
-with cols[3]:
-    metric_card(t["overstock"], f"{insights['overstock_count']:,}")
-
-st.divider()
-
-download_cols = st.columns(2)
-with download_cols[0]:
-    st.download_button(
-        t["download_excel"],
-        data=st.session_state["excel_bytes"],
-        file_name="MilleFee BP Data.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-    )
-with download_cols[1]:
-    st.download_button(
-        t["download_word"],
-        data=st.session_state["word_bytes"],
-        file_name="MilleFee Business Analysis.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        use_container_width=True,
-    )
-
-tab1, tab2, tab3, tab4 = st.tabs([t["tab_final"], t["tab_summaries"], t["tab_priority"], t["tab_detected"]])
-
-with tab1:
-    st.subheader(t["final_analysis"])
-    show_column_notes(language, "Final Analysis")
-    view = result.final.copy()
-    for col in ["Contribution %", "Cumulative %"]:
-        if col in view:
-            view[col] = view[col].map(lambda x: f"{x:.1%}" if pd.notna(x) else "")
-    if "Coverage" in view:
-        view["Coverage"] = view["Coverage"].map(lambda x: "" if pd.isna(x) else f"{x:,.2f}")
-    st.dataframe(view, use_container_width=True, height=520)
-
-with tab2:
-    left, right = st.columns(2)
-    with left:
-        st.subheader(t["sabc_summary"])
-        show_column_notes(language, "SABC Summary")
-        st.dataframe(result.sabc_summary, use_container_width=True)
-        st.subheader(t["action_summary"])
-        show_column_notes(language, "Action Summary")
-        st.dataframe(result.action_summary, use_container_width=True)
-    with right:
-        st.subheader(t["inventory_summary"])
-        show_column_notes(language, "Inventory Status Summary")
-        st.dataframe(result.inventory_status_summary, use_container_width=True)
-        st.subheader(t["matrix"])
-        show_column_notes(language, "Matrix")
-        st.dataframe(result.matrix, use_container_width=True)
-
-with tab3:
-    priority_cols = [
-        "Product SKU",
-        "Product Name",
-        "Qty",
-        "SABC Type",
-        "Adjusted Future Inventory",
-        "Coverage",
-        "Inventory Status",
-        "Action",
-    ]
-    st.subheader(t["replenishment"])
-    show_column_notes(language, "Priority")
-    st.dataframe(result.insights["urgent_table"][priority_cols], use_container_width=True)
-    st.subheader(t["overstock_risk"])
-    show_column_notes(language, "Priority")
-    st.dataframe(result.insights["overstock_table"][priority_cols], use_container_width=True)
-
-with tab4:
-    st.subheader(t["auto_detected"])
-    show_column_notes(language, "Detected Columns")
-    detected = pd.DataFrame([{t["field"]: key, t["detected_column"]: value} for key, value in result.detected_columns.items()])
-    st.dataframe(detected, use_container_width=True, hide_index=True)
+if st.session_state["user"]["role"] == "admin":
+    page = st.sidebar.radio(t["page"], [t["bp_page"], t["manage_users"]])
+    if page == t["manage_users"]:
+        manage_users_page(t)
+    else:
+        bp_generator_page(t, language)
+else:
+    bp_generator_page(t, language)

@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 *.log
 .streamlit/secrets.toml
+.app_users.json
 .venv/
 venv/
 env/
