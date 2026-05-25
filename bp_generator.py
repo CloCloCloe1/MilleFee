@@ -328,6 +328,8 @@ def build_insights(final: pd.DataFrame, sabc: pd.DataFrame, status: pd.DataFrame
     core = final[final["SABC Type"].isin(["S", "A"])]
     no_sales = final[final["Inventory Status"] == "No Sales / Review"]
     top_sku_table = final.sort_values("Qty", ascending=False).head(5).copy()
+    catalogue_present = any(col in final.columns for col in ["Category", "Recommendation / Lifecycle Status", "RP USD", "Wholesale Price", "Inner Case", "Outer Case"])
+    catalogue_insights = build_catalogue_insights(final) if catalogue_present else {}
     return {
         "total_skus": total_skus,
         "total_qty": total_qty,
@@ -343,7 +345,66 @@ def build_insights(final: pd.DataFrame, sabc: pd.DataFrame, status: pd.DataFrame
         "top_sku_table": top_sku_table,
         "urgent_table": urgent.head(10),
         "overstock_table": overstock.head(10),
+        "catalogue_present": catalogue_present,
+        **catalogue_insights,
     }
+
+
+def build_catalogue_insights(final: pd.DataFrame) -> dict:
+    insights: dict = {}
+    work = final.copy()
+
+    if "Category" in work.columns:
+        category = (
+            work.groupby("Category", dropna=False)
+            .agg(
+                SKU_Count=("Product SKU", "count"),
+                Qty=("Qty", "sum"),
+                Avg_Coverage=("Coverage", "mean"),
+                Future_Inventory=("Adjusted Future Inventory", "sum"),
+            )
+            .reset_index()
+            .sort_values("Qty", ascending=False)
+        )
+        category["Qty Share"] = np.where(work["Qty"].sum() > 0, category["Qty"] / work["Qty"].sum(), 0)
+        insights["category_summary"] = category.head(10)
+
+    if "Recommendation / Lifecycle Status" in work.columns:
+        lifecycle = (
+            work.groupby("Recommendation / Lifecycle Status", dropna=False)
+            .agg(SKU_Count=("Product SKU", "count"), Qty=("Qty", "sum"), Avg_Coverage=("Coverage", "mean"))
+            .reset_index()
+            .sort_values("Qty", ascending=False)
+        )
+        insights["lifecycle_summary"] = lifecycle.head(10)
+
+    if {"RP USD", "Wholesale Price"}.issubset(work.columns):
+        work["RP USD"] = pd.to_numeric(work["RP USD"], errors="coerce")
+        work["Wholesale Price"] = pd.to_numeric(work["Wholesale Price"], errors="coerce")
+        if "Margin %" not in work.columns:
+            work["Margin %"] = np.where(work["RP USD"] > 0, (work["RP USD"] - work["Wholesale Price"]) / work["RP USD"], np.nan)
+        work["Estimated Wholesale Sales"] = work["Qty"] * work["Wholesale Price"]
+        work["Estimated Retail Sales"] = work["Qty"] * work["RP USD"]
+        priced = work.dropna(subset=["RP USD", "Wholesale Price"])
+        insights["priced_sku_count"] = len(priced)
+        insights["avg_margin"] = float(priced["Margin %"].mean()) if not priced.empty and "Margin %" in priced.columns else np.nan
+        insights["estimated_wholesale_sales"] = float(priced["Estimated Wholesale Sales"].sum()) if not priced.empty else 0
+        insights["estimated_retail_sales"] = float(priced["Estimated Retail Sales"].sum()) if not priced.empty else 0
+        margin_cols = ["Product SKU", "Product Name", "Qty", "RP USD", "Wholesale Price", "Margin %", "SABC Type", "Inventory Status", "Action"]
+        insights["low_margin_table"] = priced.sort_values("Margin %", ascending=True)[margin_cols].head(10)
+        insights["top_value_table"] = priced.sort_values("Estimated Wholesale Sales", ascending=False)[
+            ["Product SKU", "Product Name", "Qty", "Wholesale Price", "Estimated Wholesale Sales", "Margin %", "SABC Type", "Inventory Status"]
+        ].head(10)
+
+    if "MOQ risk" in work.columns:
+        moq = work[work["MOQ risk"].astype(str).str.len() > 0].copy()
+        insights["moq_risk_count"] = len(moq)
+        moq_cols = [c for c in ["Product SKU", "Product Name", "Qty", "Avg Monthly Sales", "Outer Case", "Coverage", "SABC Type", "MOQ risk"] if c in moq.columns]
+        insights["moq_risk_table"] = moq.sort_values(["SABC Type", "Avg Monthly Sales"], ascending=[True, False])[moq_cols].head(10)
+    else:
+        insights["moq_risk_count"] = 0
+
+    return insights
 
 
 def dataframe_to_rows(df: pd.DataFrame) -> list[list[object]]:
@@ -431,6 +492,17 @@ def generate_excel(result: AnalysisResult) -> bytes:
         ("Action Summary", result.action_summary, "ActionSummaryTable", ["Qty Share"]),
         ("SABC x Inventory Status Matrix", result.matrix.reset_index(), "SABCMatrixTable", []),
     ]
+    if result.insights.get("catalogue_present"):
+        if "category_summary" in result.insights:
+            sheets.append(("Category Summary", result.insights["category_summary"], "CategorySummaryTable", ["Qty Share"]))
+        if "lifecycle_summary" in result.insights:
+            sheets.append(("Lifecycle Summary", result.insights["lifecycle_summary"], "LifecycleSummaryTable", []))
+        if "top_value_table" in result.insights:
+            sheets.append(("Top Value SKUs", result.insights["top_value_table"], "TopValueTable", ["Margin %"]))
+        if "low_margin_table" in result.insights:
+            sheets.append(("Low Margin Review", result.insights["low_margin_table"], "LowMarginTable", ["Margin %"]))
+        if "moq_risk_table" in result.insights and not result.insights["moq_risk_table"].empty:
+            sheets.append(("MOQ Risk", result.insights["moq_risk_table"], "MOQRiskTable", []))
     for name, df, table_name, percent_cols in sheets:
         ws = wb.create_sheet(name)
         write_df(ws, df, table_name, percent_cols)
@@ -550,6 +622,49 @@ def add_key_value_paragraph(doc: Document, label: str, value: str):
     p.add_run(value)
 
 
+def add_catalogue_report_sections(doc: Document, insights: dict):
+    doc.add_heading("Catalogue-Enhanced Commercial Analysis", level=1)
+    doc.add_paragraph(
+        "Because a catalogue / price list was provided, this report adds a commercial layer on top of sales and inventory: "
+        "category performance, lifecycle status, retail price, wholesale price, margin, case pack, and MOQ risk where those fields are available."
+    )
+
+    if "category_summary" in insights and not insights["category_summary"].empty:
+        doc.add_heading("Category Performance", level=2)
+        doc.add_paragraph("This view shows which product categories carry sales volume and whether their inventory coverage is balanced.")
+        add_table(doc, insights["category_summary"], max_rows=10)
+
+    if "lifecycle_summary" in insights and not insights["lifecycle_summary"].empty:
+        doc.add_heading("Recommendation / Lifecycle Status", level=2)
+        doc.add_paragraph("This view helps compare current lifecycle labels against real sales and coverage behavior.")
+        add_table(doc, insights["lifecycle_summary"], max_rows=10)
+
+    if "priced_sku_count" in insights:
+        doc.add_heading("Pricing and Margin Analysis", level=2)
+        add_bullet(doc, f"Priced SKUs matched: {insights.get('priced_sku_count', 0):,}.")
+        add_bullet(doc, f"Estimated wholesale sales value from the 12-month Qty base: ${insights.get('estimated_wholesale_sales', 0):,.0f}.")
+        add_bullet(doc, f"Estimated retail sales value from the 12-month Qty base: ${insights.get('estimated_retail_sales', 0):,.0f}.")
+        avg_margin = insights.get("avg_margin", np.nan)
+        if pd.notna(avg_margin):
+            add_bullet(doc, f"Average gross margin based on RP USD and Wholesale Price: {avg_margin:.1%}.")
+        if "top_value_table" in insights and not insights["top_value_table"].empty:
+            doc.add_heading("Top Value SKUs", level=2)
+            doc.add_paragraph("These SKUs are important not only by units sold, but also by estimated wholesale sales value.")
+            add_table(doc, insights["top_value_table"], max_rows=10)
+        if "low_margin_table" in insights and not insights["low_margin_table"].empty:
+            doc.add_heading("Low-Margin Review", level=2)
+            doc.add_paragraph("Low-margin SKUs should be reviewed before heavy promotion, bundle discounts, or large replenishment commitments.")
+            add_table(doc, insights["low_margin_table"], max_rows=10)
+
+    if insights.get("moq_risk_count", 0) > 0 and "moq_risk_table" in insights:
+        doc.add_heading("MOQ / Case Pack Risk", level=2)
+        doc.add_paragraph(
+            "The table below flags SKUs where outer case quantity appears high versus monthly sales velocity. "
+            "These SKUs may require smaller MOQ, split shipment, or conservative PO planning."
+        )
+        add_table(doc, insights["moq_risk_table"], max_rows=10)
+
+
 def generate_word_report(result: AnalysisResult, brand_name: str = "MilleFee") -> bytes:
     doc = Document()
     section = doc.sections[0]
@@ -570,6 +685,7 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "MilleFee") -
     subtitle.runs[0].font.color.rgb = RGBColor(134, 134, 139)
 
     insights = result.insights
+    has_catalogue = bool(insights.get("catalogue_present"))
     doc.add_heading("Executive Summary", level=1)
     add_bullet(doc, f"Analyzed {insights['total_skus']:,} SKUs with {insights['total_qty']:,.0f} units sold in the latest available 12-month window.")
     add_bullet(doc, f"Top SKU: {insights['top_sku']} - {insights['top_product']} ({insights['top_qty']:,.0f} units, {insights['top_share']:.1%} of sales).")
@@ -579,6 +695,14 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "MilleFee") -
         "These items should be treated as the commercial priority group: protect availability, review PO timing first, and use them as the anchor products for channel growth."
     )
     add_bullet(doc, f"{insights['urgent_count']:,} SKUs need immediate replenishment attention; {insights['overstock_count']:,} SKUs show overstock risk.")
+    if has_catalogue and "priced_sku_count" in insights:
+        add_bullet(
+            doc,
+            f"Catalogue pricing was linked for {insights['priced_sku_count']:,} SKUs. Estimated wholesale sales value is "
+            f"${insights.get('estimated_wholesale_sales', 0):,.0f}, with an average gross margin of {insights.get('avg_margin', 0):.1%} where price data is available."
+        )
+    if has_catalogue and insights.get("moq_risk_count", 0) > 0:
+        add_bullet(doc, f"{insights['moq_risk_count']:,} SKUs show MOQ or outer-case risk, meaning case pack size may be too large versus current monthly sales velocity.")
 
     doc.add_heading("Top 5 SKUs by 12-Month Sales", level=2)
     top_cols = ["Product SKU", "Product Name", "Qty", "Contribution %", "Cumulative %", "SABC Type", "Coverage", "Inventory Status", "Action"]
@@ -588,7 +712,7 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "MilleFee") -
     add_key_value_paragraph(doc, "Sales Report", "SKU-level quantity sold, product name, and month/year when available.")
     add_key_value_paragraph(doc, "Stock Levels Report", "SKU-level available stock, incoming stock, and on-hand inventory when available.")
     if any(k.startswith("catalogue_") for k in result.detected_columns):
-        add_key_value_paragraph(doc, "Optional Catalogue", "Catalogue fields were linked by SKU and added to the final analysis.")
+        add_key_value_paragraph(doc, "Optional Catalogue", "Catalogue fields were linked by SKU and added to the final analysis, including category, lifecycle status, pricing, case pack, margin, and MOQ risk when available.")
 
     doc.add_heading("Excel Column Explanation", level=1)
     explanation = pd.DataFrame(
@@ -620,6 +744,9 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "MilleFee") -
     status_png = make_bar_chart_png(result.inventory_status_summary, "Inventory Status", "SKU_Count", "Inventory Status by SKU Count")
     doc.add_picture(status_png, width=Inches(6.5))
 
+    if has_catalogue:
+        add_catalogue_report_sections(doc, insights)
+
     doc.add_heading("Replenishment Priority", level=1)
     priority_cols = ["Product SKU", "Product Name", "Qty", "SABC Type", "Adjusted Future Inventory", "Coverage", "Inventory Status", "Action"]
     add_table(doc, insights["urgent_table"][priority_cols], max_rows=10)
@@ -632,6 +759,8 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "MilleFee") -
     add_bullet(doc, "Month 2-3: reduce or pause PO for Overstock SKUs, especially C-type long-tail products.")
     add_bullet(doc, "Month 3-4: build channel-specific bundles around best-selling product lines and display sets.")
     add_bullet(doc, "Month 4-6: review SKU lifecycle, discontinue low-sales SKUs where sell-through does not improve, and reallocate budget to hero SKUs.")
+    if has_catalogue:
+        add_bullet(doc, "Catalogue-enhanced plan: combine sales velocity with price, margin, category, and case-pack data before finalizing replenishment, discontinuation, and new product launch decisions.")
 
     doc.add_heading("Label / Packaging Optimization", level=1)
     add_bullet(doc, "Prioritize bilingual label clarity for S/A products first, because these SKUs carry the highest sales impact.")
@@ -647,10 +776,15 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "MilleFee") -
     doc.add_heading("New Product Plan", level=1)
     add_bullet(doc, "Expand adjacent shades or formats only where the current line has proven sell-through.")
     add_bullet(doc, "Require catalogue pricing, MOQ, inner/outer case data, and expected launch channel before committing to new SKUs.")
+    if has_catalogue:
+        add_bullet(doc, "Use category and margin data to prioritize launches in product families that already show high sales contribution and healthy margin.")
+        add_bullet(doc, "Avoid launching new SKUs with large outer-case quantities unless expected monthly demand can absorb the MOQ within a reasonable coverage window.")
 
     doc.add_heading("Manufacturer Support Needed", level=1)
     add_bullet(doc, "Confirm replenishment lead time, MOQ flexibility, tester/display support, and launch assets for priority SKUs.")
     add_bullet(doc, "Request packaging files and ingredient/claim documentation for faster Canadian channel onboarding.")
+    if has_catalogue:
+        add_bullet(doc, "Request support on MOQ breaks, case-pack flexibility, and wholesale pricing for SKUs with high demand but low margin or high case-pack risk.")
 
     doc.add_heading("Key Business Conclusion", level=1)
     doc.add_paragraph(
