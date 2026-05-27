@@ -338,6 +338,17 @@ def aggregate_sales(
         if PROFIT_COL not in sales_year_summary.columns:
             sales_year_summary[PROFIT_COL] = np.nan
 
+    current_sales_year = None
+    if manual_year_mode and annual is not None and not annual.empty:
+        current_sales_year = int(annual["_year"].max())
+        work = annual[annual["_year"] == current_sales_year].copy()
+        grouped = (
+            work.groupby("_sku", as_index=False)
+            .agg(**{"Product SKU": ("_sku", "first"), "Product Name": (name_col, mode_or_first), "Qty": ("_qty", "sum")})
+            .drop(columns=["_sku"], errors="ignore")
+            .sort_values("Qty", ascending=False)
+        )
+
     sales_location_summary = None
     if location_col or manual_location:
         loc = work.copy()
@@ -398,6 +409,7 @@ def aggregate_sales(
         "sales_profit": profit_col or "Not detected",
         "sales_filter_keyword": filter_keyword or "Not used",
         "sales_year_mode": "Manual upload year" if manual_year_mode else "Latest 12 months / detected from sales date",
+        "current_analysis_sales_year": current_sales_year or "Latest available period",
     }
 
 
@@ -775,7 +787,7 @@ def build_purchase_summary(
     return summary, sku_summary, purchase_key_summary, location_summary, year_location_summary, sku_location_summary, detected
 
 
-def build_location_year_business_view(
+def build_latest_year_inventory_view(
     sales_year_location_summary: pd.DataFrame | None,
     stock_location_summary: pd.DataFrame | None,
     purchase_year_location_summary: pd.DataFrame | None,
@@ -795,13 +807,18 @@ def build_location_year_business_view(
         view = purchase_view if view is None else view.merge(purchase_view, on=["Year", "Location"], how="outer")
     if view is None or view.empty:
         return None
+    latest_year = int(pd.to_numeric(view["Year"], errors="coerce").max())
+    view = view[pd.to_numeric(view["Year"], errors="coerce") == latest_year].copy()
     if stock_location_summary is not None and not stock_location_summary.empty:
         stock_cols = ["Location", "Available", "Incoming", "On Hand", "Future Inventory"]
         stock_cols = [col for col in stock_cols if col in stock_location_summary.columns]
         view = view.merge(stock_location_summary[stock_cols], on="Location", how="left")
-    for col in ["Sales Qty", SALES_AMOUNT_COL, PROFIT_COL, PO_COST_COL, "Purchase Qty", "Available", "Incoming", "On Hand", "Future Inventory"]:
+    for col in ["Sales Qty", PO_COST_COL, "Purchase Qty", "Available", "Incoming", "On Hand", "Future Inventory"]:
         if col in view.columns:
             view[col] = pd.to_numeric(view[col], errors="coerce").fillna(0)
+    for col in [SALES_AMOUNT_COL, PROFIT_COL]:
+        if col in view.columns:
+            view[col] = pd.to_numeric(view[col], errors="coerce")
     ordered = [
         "Year",
         "Location",
@@ -885,7 +902,7 @@ def build_analysis(
     )
     stock, stock_location_summary, stock_cols = aggregate_stock(stock_df, purchase_filter_keyword, location_filter)
     sales_purchase_year_summary = build_sales_purchase_year_summary(sales_year_summary, purchase_summary)
-    location_year_business_view = build_location_year_business_view(
+    location_year_business_view = build_latest_year_inventory_view(
         sales_year_location_summary,
         stock_location_summary,
         purchase_year_location_summary,
@@ -1244,26 +1261,14 @@ def generate_excel(result: AnalysisResult) -> bytes:
         ("SABC x Inventory Status Matrix", result.matrix.reset_index(), "SABCMatrixTable", []),
     ]
     if result.location_year_business_view is not None and not result.location_year_business_view.empty:
-        sheets.append(("Year Location View", result.location_year_business_view, "YearLocationViewTable", []))
+        sheets.append(("2026 Inventory View", result.location_year_business_view, "InventoryViewTable", []))
     if result.sales_purchase_year_summary is not None and not result.sales_purchase_year_summary.empty:
         sheets.append(("Sales PO Year Compare", result.sales_purchase_year_summary, "SalesPOYearCompareTable", []))
     if result.sales_year_summary is not None and not result.sales_year_summary.empty:
         sheets.append(("Sales Summary by Year", result.sales_year_summary, "SalesSummaryByYearTable", []))
-    if result.sales_location_summary is not None and not result.sales_location_summary.empty:
-        sheets.append(("Sales by Location", result.sales_location_summary, "SalesByLocationTable", []))
-    if result.sales_year_location_summary is not None and not result.sales_year_location_summary.empty:
-        sheets.append(("Sales Year Location", result.sales_year_location_summary, "SalesYearLocationTable", []))
-    if result.stock_location_summary is not None and not result.stock_location_summary.empty:
-        sheets.append(("Stock by Location", result.stock_location_summary, "StockByLocationTable", []))
     if result.purchase_summary is not None:
         if result.purchase_sku_summary is not None and not result.purchase_sku_summary.empty:
             sheets.append(("Purchase by SKU", result.purchase_sku_summary, "PurchaseBySKUTable", []))
-        if result.purchase_location_summary is not None and not result.purchase_location_summary.empty:
-            sheets.append(("Purchase by Location", result.purchase_location_summary, "PurchaseByLocationTable", []))
-        if result.purchase_year_location_summary is not None and not result.purchase_year_location_summary.empty:
-            sheets.append(("Purchase Year Location", result.purchase_year_location_summary, "PurchaseYearLocationTable", []))
-        if result.purchase_sku_location_summary is not None and not result.purchase_sku_location_summary.empty:
-            sheets.append(("Purchase SKU Location", result.purchase_sku_location_summary, "PurchaseSKULocationTable", []))
     if result.insights.get("catalogue_present"):
         if "category_summary" in result.insights:
             sheets.append(("Category Summary", result.insights["category_summary"], "CategorySummaryTable", ["Qty Share"]))
@@ -1537,7 +1542,7 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     if result.sales_year_summary is not None:
         add_key_value_paragraph(doc, "Year-Labeled Sales Reports", "Sales files were uploaded by year, so sales trend is compared against PO cost by the same uploaded year.")
     if result.location_year_business_view is not None:
-        add_key_value_paragraph(doc, "Location Logic", "When Location is available in Sales, Stock, or PO files, the report keeps the main SKU analysis unchanged and adds location-level views automatically.")
+        add_key_value_paragraph(doc, "Current Inventory Logic", "Current inventory is compared only against the latest uploaded sales year, because the stock report is an up-to-date snapshot rather than historical inventory.")
 
     doc.add_heading("Excel Column Explanation", level=1)
     explanation = pd.DataFrame(
@@ -1609,30 +1614,15 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
                 doc.add_heading("Integrated Sales / Inventory / Purchase View", level=2)
                 doc.add_paragraph("This view connects matched PO cost back to the main SKU analysis, so purchase investment can be compared against sales and inventory status.")
                 add_table(doc, integrated_purchase[integrated_purchase_cols], max_rows=15)
-        if result.purchase_location_summary is not None and not result.purchase_location_summary.empty:
-            doc.add_heading("PO Cost by Location", level=2)
-            doc.add_paragraph("This view separates PO cost by receiving location, so PO investment can be reviewed without manually filtering location before upload.")
-            add_table(doc, result.purchase_location_summary, max_rows=10)
-        if result.purchase_sku_location_summary is not None and not result.purchase_sku_location_summary.empty:
-            doc.add_heading("Top SKU Purchase by Location", level=2)
-            doc.add_paragraph("This table shows the largest SKU/location purchase combinations after applying the brand keyword filter.")
-            add_table(doc, result.purchase_sku_location_summary, max_rows=15)
 
     if result.location_year_business_view is not None and not result.location_year_business_view.empty:
-        doc.add_heading("Year + Location Business View", level=1)
+        latest_year = int(pd.to_numeric(result.location_year_business_view["Year"], errors="coerce").max())
+        doc.add_heading(f"{latest_year} Sales + Current Inventory View", level=1)
         doc.add_paragraph(
-            "This view is designed for questions like 2024 Toronto, 2025 Vancouver, or 2026 year-to-date by location. "
-            "Sales and PO amounts are matched by year and location; stock is current inventory by location when the stock report includes Location."
+            "This view compares the latest uploaded sales year with the current stock snapshot. "
+            "Prior years are excluded from inventory comparison because today's available, incoming, on-hand, and future inventory are not historical stock levels."
         )
         add_table(doc, result.location_year_business_view, max_rows=20)
-    if result.sales_location_summary is not None and not result.sales_location_summary.empty:
-        doc.add_heading("Sales by Location", level=2)
-        doc.add_paragraph("This table uses the uploaded sales period and separates sales quantity by location when the Sales Report includes Location.")
-        add_table(doc, result.sales_location_summary, max_rows=15)
-    if result.stock_location_summary is not None and not result.stock_location_summary.empty:
-        doc.add_heading("Current Stock by Location", level=2)
-        doc.add_paragraph("This table separates current available, incoming, on-hand, and future inventory by location when the Stock Levels Report includes Location.")
-        add_table(doc, result.stock_location_summary, max_rows=15)
 
     if has_catalogue:
         add_catalogue_report_sections(doc, insights)

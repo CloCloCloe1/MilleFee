@@ -60,10 +60,7 @@ TEXT = {
         "sales_year_summary": "Sales Summary by Year",
         "sales_purchase_year_summary": "Sales vs PO by Year",
         "purchase_sku_summary": "Purchase by SKU",
-        "purchase_location_summary": "Purchase by Location",
-        "location_year_view": "Year + Location Business View",
-        "sales_location_summary": "Sales by Location",
-        "stock_location_summary": "Stock by Location",
+        "location_year_view": "Latest Sales Year + Current Inventory",
         "field": "Field",
         "detected_column": "Detected Column",
         "column_notes": "Column explanation",
@@ -134,10 +131,7 @@ TEXT = {
         "sales_year_summary": "\u6309\u5e74\u4efd\u6c47\u603b\u9500\u552e",
         "sales_purchase_year_summary": "\u6309\u5e74\u4efd\u5bf9\u6bd4 Sales vs PO",
         "purchase_sku_summary": "\u6309 SKU \u6c47\u603b\u91c7\u8d2d\u91d1\u989d",
-        "purchase_location_summary": "\u6309 Location \u6c47\u603b\u91c7\u8d2d\u91d1\u989d",
-        "location_year_view": "\u6309\u5e74\u4efd + Location \u7684\u7efc\u5408\u89c6\u56fe",
-        "sales_location_summary": "\u6309 Location \u6c47\u603b\u9500\u552e",
-        "stock_location_summary": "\u6309 Location \u6c47\u603b\u5e93\u5b58",
+        "location_year_view": "\u6700\u65b0\u5e74\u4efd Sales + \u5f53\u524d\u5e93\u5b58",
         "field": "\u5b57\u6bb5",
         "detected_column": "\u8bc6\u522b\u5230\u7684\u5217\u540d",
         "column_notes": "\u5b57\u6bb5\u89e3\u91ca",
@@ -171,7 +165,7 @@ EXPLANATIONS = {
         "Final Analysis": {
             "Product SKU": "Unique product code used to merge Sales and Stock reports.",
             "Product Name": "Product description from the Sales report; stock name is used only if sales name is missing.",
-            "Qty": "Total quantity sold from the uploaded sales period. If year-labeled sales files are uploaded, this is the combined quantity across those files.",
+            "Qty": "Sales quantity used for current inventory decisions. If year-labeled sales files are uploaded, this uses only the latest uploaded year.",
             "Contribution %": "SKU Qty divided by total Qty. Shows how much this SKU contributes to sales volume.",
             "Cumulative %": "Running total of Contribution % after SKUs are sorted from highest Qty to lowest Qty. Used to assign S/A/B/C type.",
             "SABC Type": "Sales priority class: S is the very top contribution, A is core, B is mid-tail, C is long-tail.",
@@ -179,7 +173,7 @@ EXPLANATIONS = {
             "Incoming": "Incoming inventory or stock on order from the stock report.",
             "Future Inventory": "Available + Incoming. This estimates stock after incoming inventory arrives.",
             "Adjusted Future Inventory": "MAX(0, Future Inventory). Negative stock is treated as zero usable stock.",
-            "Avg Monthly Sales": "Qty divided by 12. For multi-year uploads, use the yearly summary sheets for trend analysis and use this field as a simple coverage benchmark.",
+            "Avg Monthly Sales": "Qty divided by 12. For year-labeled uploads, Qty is the latest uploaded year and this field is used as a simple coverage benchmark.",
             "Coverage": "Adjusted Future Inventory divided by Avg Monthly Sales. It estimates how many months current/future stock can support.",
             "Inventory Status": "Stock health label based on coverage.",
             "Action": "Suggested business action based on Inventory Status.",
@@ -191,7 +185,7 @@ EXPLANATIONS = {
         "SABC Summary": {
             "SABC Type": "Sales priority class generated from cumulative sales contribution.",
             "SKU_Count": "Number of SKUs in each SABC class.",
-            "Qty": "Sales quantity from the uploaded sales period for all SKUs in that class.",
+            "Qty": "Sales quantity from the current analysis period, usually the latest uploaded sales year.",
             "Avg_Coverage": "Average inventory coverage for SKUs in that class.",
             "Future_Inventory": "Total adjusted future inventory for SKUs in that class.",
             "Qty Share": "Qty in this SABC class divided by total Qty.",
@@ -199,7 +193,7 @@ EXPLANATIONS = {
         "Inventory Status Summary": {
             "Inventory Status": "Stock health group based on coverage and sales demand.",
             "SKU_Count": "Number of SKUs in each inventory status.",
-            "Qty": "Sales quantity from the uploaded sales period for SKUs in that status.",
+            "Qty": "Sales quantity from the current analysis period, usually the latest uploaded sales year.",
             "Avg_Coverage": "Average months of inventory coverage for SKUs in that status.",
             "Future_Inventory": "Total adjusted future inventory for SKUs in that status.",
             "Qty Share": "Qty in this inventory status divided by total Qty.",
@@ -207,14 +201,14 @@ EXPLANATIONS = {
         "Action Summary": {
             "Action": "Recommended business action, such as Replenish, Monitor, Review PO, Reduce PO, or Review SKU.",
             "SKU_Count": "Number of SKUs assigned to this action.",
-            "Qty": "Sales quantity from the uploaded sales period for SKUs assigned to this action.",
+            "Qty": "Sales quantity from the current analysis period, usually the latest uploaded sales year.",
             "Avg_Coverage": "Average inventory coverage for SKUs assigned to this action.",
             "Future_Inventory": "Total adjusted future inventory for SKUs assigned to this action.",
             "Qty Share": "Qty assigned to this action divided by total Qty.",
         },
         "Matrix": {"Rows": "SABC sales priority type.", "Columns": "Inventory Status groups.", "Values": "Number of SKUs in each combination."},
         "Priority": {
-            "Qty": "Sales quantity from the uploaded sales period.",
+            "Qty": "Sales quantity from the current analysis period, usually the latest uploaded sales year.",
             "Adjusted Future Inventory": "Usable future inventory after preventing negative stock.",
             "Coverage": "Months of stock coverage based on average monthly sales.",
             "Inventory Status": "Current inventory risk label.",
@@ -243,40 +237,21 @@ EXPLANATIONS = {
             "PO Cost ($ CAD)": "Total PO line cost after applying the brand and location filters.",
             "Quantity": "Total purchased quantity when available.",
         },
-        "Purchase by Location": {
-            "Location": "Receiving or stock location from the PO file.",
-            "PO Cost ($ CAD)": "Total PO line cost by location after applying the brand keyword filter.",
-            "2024/2025/2026 PO Cost ($ CAD)": "PO cost by uploaded PO year for this location.",
-        },
-        "Year Location View": {
-            "Year": "Uploaded or detected calendar year.",
+        "Latest Inventory View": {
+            "Year": "Latest uploaded sales year. Current stock is compared only to this year.",
             "Location": "Location detected from Sales, Stock, or PO files.",
             "Sales Qty": "Sales quantity in this year and location when Sales Report includes date and location.",
             "Sales Amount ($ CAD)": "Sales revenue in this year and location when a sales amount column is available.",
             "Profit ($ CAD)": "Profit in this year and location when available.",
             "PO Cost ($ CAD)": "PO cost in this year and location after applying the brand keyword filter.",
-            "Available / Incoming / On Hand / Future Inventory": "Current stock values by location. Stock is current, not historical by year.",
-        },
-        "Sales by Location": {
-            "Location": "Sales location detected from the Sales Report.",
-            "SKU Count": "Number of selling SKUs in this location.",
-            "Qty": "Sales quantity in this location from the uploaded sales period.",
-            "Sales Amount ($ CAD)": "Sales revenue in this location from the uploaded sales period when available.",
-            "Profit ($ CAD)": "Profit in this location from the uploaded sales period when available.",
-        },
-        "Stock by Location": {
-            "Location": "Stock or warehouse location detected from the Stock Levels Report.",
-            "SKU Count": "Number of SKUs with stock records in this location.",
-            "Available": "Current available stock in this location.",
-            "Incoming": "Incoming inventory for this location.",
-            "Future Inventory": "Available + Incoming for this location.",
+            "Available / Incoming / On Hand / Future Inventory": "Current stock values from today's stock report. These are not historical 2024 or 2025 inventory numbers.",
         },
     },
     ZH: {
         "Final Analysis": {
             "Product SKU": "\u7528\u4e8e\u8fde\u63a5 Sales \u548c Stock \u4e24\u4efd\u62a5\u8868\u7684\u552f\u4e00\u4ea7\u54c1\u7f16\u7801\u3002",
             "Product Name": "\u4ea7\u54c1\u540d\u79f0\uff0c\u4f18\u5148\u6765\u81ea\u9500\u552e\u62a5\u8868\u3002",
-            "Qty": "\u4e0a\u4f20 sales \u533a\u95f4\u7684\u603b\u9500\u552e\u6570\u91cf\u3002\u5982\u679c\u4e0a\u4f20\u4e86\u591a\u4e2a\u5e74\u4efd sales file\uff0c\u8fd9\u91cc\u662f\u8fd9\u4e9b\u6587\u4ef6\u7684\u5408\u8ba1\u9500\u91cf\u3002",
+            "Qty": "\u7528\u4e8e\u5f53\u524d\u5e93\u5b58\u51b3\u7b56\u7684\u9500\u91cf\u3002\u5982\u679c\u4e0a\u4f20\u4e86\u591a\u4e2a\u5e74\u4efd sales file\uff0c\u8fd9\u91cc\u53ea\u7528\u6700\u65b0\u4e0a\u4f20\u5e74\u4efd\u7684\u9500\u91cf\u3002",
             "Contribution %": "\u5355\u4e2a SKU \u7684 Qty / \u5168\u90e8 SKU \u7684\u603b Qty\u3002",
             "Cumulative %": "\u6309 Qty \u4ece\u9ad8\u5230\u4f4e\u6392\u5e8f\u540e\uff0cContribution % \u7684\u7d2f\u8ba1\u503c\u3002",
             "SABC Type": "\u9500\u552e\u4f18\u5148\u7ea7\uff1aS/A \u662f\u6838\u5fc3 SKU\uff0cB/C \u662f\u4e2d\u957f\u5c3e SKU\u3002",
@@ -284,7 +259,7 @@ EXPLANATIONS = {
             "Incoming": "\u5e93\u5b58\u62a5\u8868\u4e2d\u7684\u5728\u9014 / \u5373\u5c06\u5165\u5e93\u5e93\u5b58\u3002",
             "Future Inventory": "Available + Incoming\uff0c\u8868\u793a\u672a\u6765\u53ef\u7528\u5e93\u5b58\u9884\u4f30\u3002",
             "Adjusted Future Inventory": "MAX(0, Future Inventory)\uff0c\u8d1f\u5e93\u5b58\u6309 0 \u5904\u7406\u3002",
-            "Avg Monthly Sales": "Qty / 12\u3002\u5982\u679c\u4e0a\u4f20\u591a\u5e74 sales file\uff0c\u5efa\u8bae\u7528\u5e74\u5ea6\u6c47\u603b\u8868\u770b trend\uff0c\u8fd9\u4e00\u5217\u4f5c\u4e3a\u7b80\u5316\u7684 coverage \u53c2\u8003\u3002",
+            "Avg Monthly Sales": "Qty / 12\u3002\u5982\u679c\u4e0a\u4f20\u591a\u5e74 sales file\uff0cQty \u4f1a\u7528\u6700\u65b0\u5e74\u4efd\uff0c\u8fd9\u4e00\u5217\u4f5c\u4e3a\u7b80\u5316\u7684 coverage \u53c2\u8003\u3002",
             "Coverage": "Adjusted Future Inventory / Avg Monthly Sales\uff0c\u8868\u793a\u5e93\u5b58\u5927\u7ea6\u8fd8\u80fd\u652f\u6301\u51e0\u4e2a\u6708\u9500\u552e\u3002",
             "Inventory Status": "\u6839\u636e\u9500\u91cf\u548c coverage \u5224\u65ad\u5e93\u5b58\u72b6\u6001\u3002",
             "Action": "\u6839\u636e\u5e93\u5b58\u72b6\u6001\u81ea\u52a8\u7ed9\u51fa\u7684\u4e1a\u52a1\u5efa\u8bae\u3002",
@@ -296,7 +271,7 @@ EXPLANATIONS = {
         "SABC Summary": {
             "SABC Type": "\u6839\u636e\u7d2f\u8ba1\u9500\u552e\u8d21\u732e\u5f97\u5230\u7684\u9500\u552e\u4f18\u5148\u7ea7\u3002",
             "SKU_Count": "\u6bcf\u4e2a SABC \u5206\u7c7b\u4e0b\u7684 SKU \u6570\u91cf\u3002",
-            "Qty": "\u8be5\u5206\u7c7b\u4e0b\u6240\u6709 SKU \u5728\u4e0a\u4f20 sales \u533a\u95f4\u5185\u7684\u9500\u91cf\u5408\u8ba1\u3002",
+            "Qty": "\u8be5\u5206\u7c7b\u4e0b\u6240\u6709 SKU \u5728\u5f53\u524d\u5206\u6790\u533a\u95f4\u7684\u9500\u91cf\u5408\u8ba1\uff0c\u901a\u5e38\u662f\u6700\u65b0\u4e0a\u4f20\u5e74\u4efd\u3002",
             "Avg_Coverage": "\u8be5\u5206\u7c7b\u4e0b SKU \u7684\u5e73\u5747\u5e93\u5b58\u8986\u76d6\u6708\u6570\u3002",
             "Future_Inventory": "\u8be5\u5206\u7c7b\u4e0b\u8c03\u6574\u540e\u672a\u6765\u5e93\u5b58\u5408\u8ba1\u3002",
             "Qty Share": "\u8be5\u5206\u7c7b Qty / \u5168\u90e8 Qty\u3002",
@@ -304,7 +279,7 @@ EXPLANATIONS = {
         "Inventory Status Summary": {
             "Inventory Status": "\u6839\u636e coverage \u548c\u9500\u552e\u9700\u6c42\u5f97\u5230\u7684\u5e93\u5b58\u5065\u5eb7\u72b6\u6001\u3002",
             "SKU_Count": "\u6bcf\u4e2a\u5e93\u5b58\u72b6\u6001\u4e0b\u7684 SKU \u6570\u91cf\u3002",
-            "Qty": "\u8be5\u5e93\u5b58\u72b6\u6001\u4e0b SKU \u5728\u4e0a\u4f20 sales \u533a\u95f4\u5185\u7684\u9500\u91cf\u5408\u8ba1\u3002",
+            "Qty": "\u8be5\u5e93\u5b58\u72b6\u6001\u4e0b SKU \u5728\u5f53\u524d\u5206\u6790\u533a\u95f4\u7684\u9500\u91cf\u5408\u8ba1\uff0c\u901a\u5e38\u662f\u6700\u65b0\u4e0a\u4f20\u5e74\u4efd\u3002",
             "Avg_Coverage": "\u8be5\u72b6\u6001\u4e0b SKU \u7684\u5e73\u5747\u5e93\u5b58\u8986\u76d6\u6708\u6570\u3002",
             "Future_Inventory": "\u8be5\u72b6\u6001\u4e0b SKU \u7684\u8c03\u6574\u540e\u672a\u6765\u5e93\u5b58\u5408\u8ba1\u3002",
             "Qty Share": "\u8be5\u72b6\u6001 Qty / \u5168\u90e8 Qty\u3002",
@@ -312,14 +287,14 @@ EXPLANATIONS = {
         "Action Summary": {
             "Action": "\u5efa\u8bae\u52a8\u4f5c\uff0c\u4f8b\u5982 Replenish\u3001Monitor\u3001Reduce PO \u6216 Review SKU\u3002",
             "SKU_Count": "\u88ab\u5206\u914d\u5230\u8be5\u52a8\u4f5c\u7684 SKU \u6570\u91cf\u3002",
-            "Qty": "\u8be5\u52a8\u4f5c\u4e0b SKU \u5728\u4e0a\u4f20 sales \u533a\u95f4\u5185\u7684\u9500\u91cf\u5408\u8ba1\u3002",
+            "Qty": "\u8be5\u52a8\u4f5c\u4e0b SKU \u5728\u5f53\u524d\u5206\u6790\u533a\u95f4\u7684\u9500\u91cf\u5408\u8ba1\uff0c\u901a\u5e38\u662f\u6700\u65b0\u4e0a\u4f20\u5e74\u4efd\u3002",
             "Avg_Coverage": "\u8be5\u52a8\u4f5c\u4e0b SKU \u7684\u5e73\u5747\u5e93\u5b58\u8986\u76d6\u6708\u6570\u3002",
             "Future_Inventory": "\u8be5\u52a8\u4f5c\u4e0b SKU \u7684\u8c03\u6574\u540e\u672a\u6765\u5e93\u5b58\u5408\u8ba1\u3002",
             "Qty Share": "\u8be5\u52a8\u4f5c Qty / \u5168\u90e8 Qty\u3002",
         },
         "Matrix": {"Rows": "SABC \u9500\u552e\u4f18\u5148\u7ea7\u5206\u7c7b\u3002", "Columns": "\u5e93\u5b58\u72b6\u6001\u5206\u7c7b\u3002", "Values": "\u6bcf\u4e2a\u7ec4\u5408\u4e0b\u7684 SKU \u6570\u91cf\u3002"},
         "Priority": {
-            "Qty": "\u4e0a\u4f20 sales \u533a\u95f4\u5185\u7684\u9500\u552e\u6570\u91cf\u3002",
+            "Qty": "\u5f53\u524d\u5206\u6790\u533a\u95f4\u7684\u9500\u552e\u6570\u91cf\uff0c\u901a\u5e38\u662f\u6700\u65b0\u4e0a\u4f20\u5e74\u4efd\u3002",
             "Adjusted Future Inventory": "\u5254\u9664\u8d1f\u5e93\u5b58\u540e\u7684\u53ef\u7528\u672a\u6765\u5e93\u5b58\u3002",
             "Coverage": "\u57fa\u4e8e\u5e73\u5747\u6708\u9500\u91cf\u8ba1\u7b97\u7684\u5e93\u5b58\u8986\u76d6\u6708\u6570\u3002",
             "Inventory Status": "\u5f53\u524d\u5e93\u5b58\u98ce\u9669\u6807\u7b7e\u3002",
@@ -348,33 +323,14 @@ EXPLANATIONS = {
             "PO Cost ($ CAD)": "\u5957\u7528\u54c1\u724c\u548c location \u7b5b\u9009\u540e\u7684 PO line \u8fdb\u8d27\u6210\u672c\u5408\u8ba1\u3002",
             "Quantity": "\u5982\u6587\u4ef6\u4e2d\u6709\u6570\u91cf\u5217\uff0c\u5219\u4e3a\u91c7\u8d2d\u6570\u91cf\u5408\u8ba1\u3002",
         },
-        "Purchase by Location": {
-            "Location": "PO \u6587\u4ef6\u4e2d\u7684\u6536\u8d27 / \u5e93\u5b58 location\u3002",
-            "PO Cost ($ CAD)": "\u5957\u7528\u54c1\u724c\u5173\u952e\u8bcd\u7b5b\u9009\u540e\uff0c\u8be5 location \u7684 PO line \u8fdb\u8d27\u6210\u672c\u5408\u8ba1\u3002",
-            "2024/2025/2026 PO Cost ($ CAD)": "\u8be5 location \u6309\u4e0a\u4f20\u5e74\u4efd\u62c6\u5206\u7684 PO \u8fdb\u8d27\u6210\u672c\u3002",
-        },
-        "Year Location View": {
-            "Year": "\u4e0a\u4f20\u65f6\u6807\u8bb0\u6216\u6587\u4ef6\u4e2d\u8bc6\u522b\u5230\u7684\u81ea\u7136\u5e74\u3002",
+        "Latest Inventory View": {
+            "Year": "\u6700\u65b0\u4e0a\u4f20\u7684 sales \u5e74\u4efd\u3002\u5f53\u524d\u5e93\u5b58\u53ea\u548c\u8fd9\u4e2a\u5e74\u4efd\u5bf9\u6bd4\u3002",
             "Location": "\u4ece Sales\u3001Stock \u6216 PO \u6587\u4ef6\u4e2d\u8bc6\u522b\u5230\u7684 location\u3002",
             "Sales Qty": "\u5982 Sales Report \u6709\u65e5\u671f\u548c location\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u9500\u91cf\u3002",
             "Sales Amount ($ CAD)": "\u5982 Sales Report \u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u9500\u552e\u989d\u3002",
             "Profit ($ CAD)": "\u5982 Sales Report \u6709 profit \u5217\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u5229\u6da6\u3002",
             "PO Cost ($ CAD)": "\u5957\u7528\u54c1\u724c\u5173\u952e\u8bcd\u7b5b\u9009\u540e\uff0c\u8be5\u5e74 + location \u7684 PO \u8fdb\u8d27\u6210\u672c\u3002",
-            "Available / Incoming / On Hand / Future Inventory": "\u8be5 location \u7684\u5f53\u524d\u5e93\u5b58\u3002\u6ce8\u610f\uff1aStock \u662f\u5f53\u524d\u5e93\u5b58\uff0c\u4e0d\u662f\u5386\u53f2\u5e74\u5ea6\u5e93\u5b58\u3002",
-        },
-        "Sales by Location": {
-            "Location": "Sales Report \u4e2d\u8bc6\u522b\u5230\u7684\u9500\u552e location\u3002",
-            "SKU Count": "\u8be5 location \u6709\u9500\u552e\u7684 SKU \u6570\u91cf\u3002",
-            "Qty": "\u4e0a\u4f20 sales \u533a\u95f4\u5185\uff0c\u8be5 location \u7684\u9500\u91cf\u3002",
-            "Sales Amount ($ CAD)": "\u5982\u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u4e0a\u4f20 sales \u533a\u95f4\u5185\u8be5 location \u7684\u9500\u552e\u989d\u3002",
-            "Profit ($ CAD)": "\u5982\u6709 profit \u5217\uff0c\u5219\u4e3a\u4e0a\u4f20 sales \u533a\u95f4\u5185\u8be5 location \u7684\u5229\u6da6\u3002",
-        },
-        "Stock by Location": {
-            "Location": "Stock Levels Report \u4e2d\u8bc6\u522b\u5230\u7684\u5e93\u5b58 / \u4ed3\u5e93 location\u3002",
-            "SKU Count": "\u8be5 location \u6709\u5e93\u5b58\u8bb0\u5f55\u7684 SKU \u6570\u91cf\u3002",
-            "Available": "\u8be5 location \u5f53\u524d\u53ef\u7528\u5e93\u5b58\u3002",
-            "Incoming": "\u8be5 location \u7684\u5728\u9014 / \u5373\u5c06\u5165\u5e93\u5e93\u5b58\u3002",
-            "Future Inventory": "Available + Incoming\uff0c\u8be5 location \u7684\u672a\u6765\u5e93\u5b58\u9884\u4f30\u3002",
+            "Available / Incoming / On Hand / Future Inventory": "\u8fd9\u662f\u4eca\u5929 stock report \u7684\u5f53\u524d\u5e93\u5b58\u503c\uff0c\u4e0d\u662f 2024 \u6216 2025 \u7684\u5386\u53f2\u5e93\u5b58\u3002",
         },
     },
 }
@@ -636,34 +592,13 @@ def bp_generator_page(t: dict, language: str):
             for col in [c for c in sku_view.columns if "($ CAD)" in c]:
                 sku_view[col] = sku_view[col].map(lambda x: f"{x:,.2f}")
             st.dataframe(sku_view, use_container_width=True, hide_index=True)
-        if result.purchase_location_summary is not None and not result.purchase_location_summary.empty:
-            st.subheader(t["purchase_location_summary"])
-            show_column_notes(language, "Purchase by Location")
-            location_view = result.purchase_location_summary.copy()
-            for col in [c for c in location_view.columns if "($ CAD)" in c]:
-                location_view[col] = location_view[col].map(lambda x: f"{x:,.2f}")
-            st.dataframe(location_view, use_container_width=True, hide_index=True)
     if result.location_year_business_view is not None and not result.location_year_business_view.empty:
         st.subheader(t["location_year_view"])
-        show_column_notes(language, "Year Location View")
+        show_column_notes(language, "Latest Inventory View")
         location_year_view = result.location_year_business_view.copy()
         for col in [c for c in location_year_view.columns if "($ CAD)" in c]:
             location_year_view[col] = location_year_view[col].map(lambda x: f"{x:,.2f}")
         st.dataframe(location_year_view, use_container_width=True, hide_index=True)
-    loc_cols = st.columns(2)
-    with loc_cols[0]:
-        if result.sales_location_summary is not None and not result.sales_location_summary.empty:
-            st.subheader(t["sales_location_summary"])
-            show_column_notes(language, "Sales by Location")
-            sales_loc_view = result.sales_location_summary.copy()
-            for col in [c for c in sales_loc_view.columns if "($ CAD)" in c]:
-                sales_loc_view[col] = sales_loc_view[col].map(lambda x: "" if pd.isna(x) else f"{x:,.2f}")
-            st.dataframe(sales_loc_view, use_container_width=True, hide_index=True)
-    with loc_cols[1]:
-        if result.stock_location_summary is not None and not result.stock_location_summary.empty:
-            st.subheader(t["stock_location_summary"])
-            show_column_notes(language, "Stock by Location")
-            st.dataframe(result.stock_location_summary, use_container_width=True, hide_index=True)
 
     download_cols = st.columns(2)
     output_brand = clean_brand_name(brand_name)
