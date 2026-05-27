@@ -2447,7 +2447,23 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
     if header_row is None or sku_col_idx is None:
         raise ValueError("Could not find a SKU/JAN/Product Code column in the catalogue workbook.")
 
-    value_lookup = append_data.set_index("_match_sku")[append_cols].to_dict(orient="index")
+    lookup_data = append_data.copy()
+
+    def row_lookup_codes(row: pd.Series) -> list[str]:
+        codes = [row.get("_match_sku", "")]
+        if "Matched Sales SKUs" in row and pd.notna(row.get("Matched Sales SKUs")):
+            codes.extend(re.split(r"\s*/\s*|\s*;\s*", str(row.get("Matched Sales SKUs"))))
+        return list(dict.fromkeys([normalize_sku(code) for code in codes if normalize_sku(code)]))
+
+    lookup_data["_lookup_sku"] = lookup_data.apply(row_lookup_codes, axis=1)
+    lookup_data = lookup_data.explode("_lookup_sku")
+    if "SABC Type (2026)" in lookup_data.columns:
+        lookup_data["_sabc_rank"] = lookup_data["SABC Type (2026)"].map({"S": 0, "A": 1, "B": 2, "C": 3}).fillna(9)
+    else:
+        lookup_data["_sabc_rank"] = 9
+    lookup_data["_lookup_qty"] = pd.to_numeric(lookup_data.get("2026 Sales Qty", 0), errors="coerce").fillna(0)
+    lookup_data = lookup_data.sort_values(["_lookup_sku", "_sabc_rank", "_lookup_qty"], ascending=[True, True, False])
+    value_lookup = lookup_data.drop_duplicates("_lookup_sku").set_index("_lookup_sku")[append_cols].to_dict(orient="index")
     start_col = ws.max_column + 1
     header_style_source = ws.cell(header_row, sku_col_idx)
     subheader_style_source = ws.cell(header_row + 1, sku_col_idx) if header_row + 1 <= ws.max_row else header_style_source
@@ -2478,7 +2494,7 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
         for offset, col_name in enumerate(append_cols):
             value = value_lookup[sku].get(col_name, np.nan)
             if pd.isna(value):
-                value = "" if str(col_name) in {"SABC Type", "Inventory Status", "Action"} else 0
+                value = "" if any(token in str(col_name) for token in ["SABC Type", "Inventory Status", "Action", "Matched Sales SKUs"]) else 0
             cell = ws.cell(row_idx, start_col + offset, value)
             style_source = ws.cell(row_idx, start_col - 1)
             if style_source.has_style:
