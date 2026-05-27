@@ -24,6 +24,7 @@ TEXT = {
         "stock": "Upload Stock Levels",
         "catalogue": "Optional: Upload Catalogue / Price List",
         "purchase": "Optional: Upload Purchase / PO History",
+        "purchase_keyword": "Purchase filter keyword",
         "brand": "Brand name",
         "generate": "Generate Analysis",
         "missing_files": "Upload the Sales Report and Stock Levels Report to begin.",
@@ -49,6 +50,7 @@ TEXT = {
         "overstock_risk": "Overstock Risk",
         "auto_detected": "Auto-detected Columns",
         "purchase_summary": "Purchase Summary",
+        "purchase_sku_summary": "Purchase by SKU",
         "field": "Field",
         "detected_column": "Detected Column",
         "column_notes": "Column explanation",
@@ -83,6 +85,7 @@ TEXT = {
         "stock": "\u4e0a\u4f20\u5e93\u5b58\u62a5\u8868",
         "catalogue": "\u53ef\u9009\uff1a\u4e0a\u4f20\u4ea7\u54c1\u76ee\u5f55 / \u4ef7\u683c\u8868",
         "purchase": "\u53ef\u9009\uff1a\u4e0a\u4f20\u91c7\u8d2d / PO \u5386\u53f2",
+        "purchase_keyword": "\u91c7\u8d2d\u7b5b\u9009\u5173\u952e\u8bcd",
         "brand": "\u54c1\u724c\u540d\u79f0",
         "generate": "\u751f\u6210\u5206\u6790",
         "missing_files": "\u8bf7\u5148\u4e0a\u4f20\u9500\u552e\u62a5\u8868\u548c\u5e93\u5b58\u62a5\u8868\u3002",
@@ -108,6 +111,7 @@ TEXT = {
         "overstock_risk": "\u5e93\u5b58\u8fc7\u9ad8\u98ce\u9669",
         "auto_detected": "\u81ea\u52a8\u8bc6\u522b\u7684\u5217\u540d",
         "purchase_summary": "\u91c7\u8d2d\u91d1\u989d\u6c47\u603b",
+        "purchase_sku_summary": "\u6309 SKU \u6c47\u603b\u91c7\u8d2d\u91d1\u989d",
         "field": "\u5b57\u6bb5",
         "detected_column": "\u8bc6\u522b\u5230\u7684\u5217\u540d",
         "column_notes": "\u5b57\u6bb5\u89e3\u91ca",
@@ -193,6 +197,13 @@ EXPLANATIONS = {
             "Purchase Amount": "Total purchase amount from the uploaded Purchase / PO History file.",
             "Record Count": "Number of purchase records included in that year.",
         },
+        "Purchase by SKU": {
+            "SKU": "SKU detected from PO line file.",
+            "Product": "Product name detected from PO line file.",
+            "Purchase Amount": "Total purchase amount after applying the purchase keyword filter.",
+            "Record Count": "Number of PO lines included.",
+            "Quantity": "Total purchased quantity when available.",
+        },
     },
     ZH: {
         "Final Analysis": {
@@ -249,6 +260,13 @@ EXPLANATIONS = {
             "Period": "\u5168\u5e74\u6216\u5e74\u521d\u81f3\u4eca\u533a\u95f4\u3002",
             "Purchase Amount": "\u4ece\u91c7\u8d2d / PO \u5386\u53f2\u6587\u4ef6\u4e2d\u6c47\u603b\u7684\u91c7\u8d2d\u91d1\u989d\u3002",
             "Record Count": "\u8be5\u5e74\u5ea6\u5305\u542b\u7684\u91c7\u8d2d\u8bb0\u5f55\u6570\u3002",
+        },
+        "Purchase by SKU": {
+            "SKU": "\u4ece PO line \u6587\u4ef6\u8bc6\u522b\u5230\u7684 SKU\u3002",
+            "Product": "\u4ece PO line \u6587\u4ef6\u8bc6\u522b\u5230\u7684\u4ea7\u54c1\u540d\u79f0\u3002",
+            "Purchase Amount": "\u5957\u7528\u91c7\u8d2d\u5173\u952e\u8bcd\u7b5b\u9009\u540e\u7684\u91c7\u8d2d\u91d1\u989d\u5408\u8ba1\u3002",
+            "Record Count": "\u5305\u542b\u7684 PO lines \u6570\u91cf\u3002",
+            "Quantity": "\u5982\u6587\u4ef6\u4e2d\u6709\u6570\u91cf\u5217\uff0c\u5219\u4e3a\u91c7\u8d2d\u6570\u91cf\u5408\u8ba1\u3002",
         },
     },
 }
@@ -375,7 +393,8 @@ def bp_generator_page(t: dict, language: str):
         sales_file = st.file_uploader(t["sales"], type=["xlsx", "xls"], key="sales")
         stock_file = st.file_uploader(t["stock"], type=["xlsx", "xls"], key="stock")
         catalogue_file = st.file_uploader(t["catalogue"], type=["xlsx", "xls"], key="catalogue")
-        purchase_file = st.file_uploader(t["purchase"], type=["xlsx", "xls"], key="purchase")
+        purchase_files = st.file_uploader(t["purchase"], type=["xlsx", "xls"], key="purchase", accept_multiple_files=True)
+        purchase_keyword = st.text_input(t["purchase_keyword"], value="", placeholder="MILLEFEE / JUDYDOLL / JOOCYEE")
         brand_name = st.text_input(t["brand"], value="", placeholder="MilleFee / Judydoll / Joocyee")
         generate = st.button(t["generate"], type="primary", use_container_width=True)
 
@@ -390,7 +409,8 @@ def bp_generator_page(t: dict, language: str):
                     load_file(sales_file),
                     load_file(stock_file),
                     load_file(catalogue_file),
-                    load_file(purchase_file),
+                    [load_file(file) for file in purchase_files] if purchase_files else None,
+                    purchase_keyword.strip(),
                     brand_name=clean_brand_name(brand_name),
                 )
             except Exception as exc:
@@ -425,6 +445,12 @@ def bp_generator_page(t: dict, language: str):
         purchase_view = result.purchase_summary.copy()
         purchase_view["Purchase Amount"] = purchase_view["Purchase Amount"].map(lambda x: f"{x:,.2f}")
         st.dataframe(purchase_view, use_container_width=True, hide_index=True)
+        if result.purchase_sku_summary is not None and not result.purchase_sku_summary.empty:
+            st.subheader(t["purchase_sku_summary"])
+            show_column_notes(language, "Purchase by SKU")
+            sku_view = result.purchase_sku_summary.copy()
+            sku_view["Purchase Amount"] = sku_view["Purchase Amount"].map(lambda x: f"{x:,.2f}")
+            st.dataframe(sku_view, use_container_width=True, hide_index=True)
 
     download_cols = st.columns(2)
     output_brand = clean_brand_name(brand_name)

@@ -44,6 +44,7 @@ class AnalysisResult:
     action_summary: pd.DataFrame
     matrix: pd.DataFrame
     purchase_summary: pd.DataFrame | None
+    purchase_sku_summary: pd.DataFrame | None
     insights: dict
     detected_columns: dict
 
@@ -153,11 +154,14 @@ def detect_header_row(raw: pd.DataFrame) -> int | None:
 def build_dataframe_from_header(raw: pd.DataFrame, header_idx: int) -> pd.DataFrame:
     header = raw.iloc[header_idx].tolist()
     subheader = raw.iloc[header_idx + 1].tolist() if header_idx + 1 < len(raw) else [None] * len(header)
+    header_non_empty = sum(pd.notna(v) for v in header)
+    subheader_non_empty = sum(pd.notna(v) for v in subheader)
+    use_subheader = 0 < subheader_non_empty <= max(3, header_non_empty * 0.5)
     columns = []
     last_parent = ""
     for parent, child in zip(header, subheader):
         parent_text = "" if pd.isna(parent) else str(parent).replace("\n", " ").strip()
-        child_text = "" if pd.isna(child) else str(child).replace("\n", " ").strip()
+        child_text = "" if (not use_subheader or pd.isna(child)) else str(child).replace("\n", " ").strip()
         if parent_text:
             last_parent = parent_text
         if parent_text and child_text:
@@ -171,7 +175,7 @@ def build_dataframe_from_header(raw: pd.DataFrame, header_idx: int) -> pd.DataFr
         else:
             name = f"Column {len(columns) + 1}"
         columns.append(name)
-    df = raw.iloc[header_idx + 1 :].copy()
+    df = raw.iloc[header_idx + (2 if use_subheader else 1) :].copy()
     df.columns = dedupe_columns(columns)
     df = df.dropna(how="all")
     return df
@@ -365,19 +369,23 @@ def apply_lifecycle_strategy(final: pd.DataFrame) -> pd.DataFrame:
     return work
 
 
-def build_purchase_summary(purchase_file: str | Path | BinaryIO | BytesIO | None) -> tuple[pd.DataFrame | None, dict]:
+def build_purchase_summary(
+    purchase_file: str | Path | BinaryIO | BytesIO | list[str | Path | BinaryIO | BytesIO] | None,
+    purchase_filter_keyword: str = "",
+) -> tuple[pd.DataFrame | None, pd.DataFrame | None, dict]:
     if purchase_file is None:
-        return None, {}
-    df = read_excel_with_detected_header(purchase_file)
+        return None, None, {}
+    files = purchase_file if isinstance(purchase_file, list) else [purchase_file]
+    df = pd.concat([read_excel_with_detected_header(file) for file in files], ignore_index=True)
     date_col = detect_column(
         df,
-        ["PO Date", "Purchase Date", "Order Date", "Invoice Date", "Date", "Created At", "Month, Year"],
+        ["Creation date", "PO Date", "Purchase Date", "Order Date", "Invoice Date", "Date", "Created At", "Month, Year"],
         required=False,
     )
     year_col = detect_column(df, ["Year", "Purchase Year", "PO Year"], required=False)
     amount_col = detect_column(
         df,
-        ["Purchase Amount", "Amount", "Total Amount", "Total", "Grand Total", "Subtotal", "Total without taxes", "Net Amount"],
+        ["Total.2", "Total.1", "Line Total", "Line Amount", "Purchase Amount", "Amount", "Total Amount", "Net Amount", "Grand Total", "Subtotal", "Total without taxes", "Total"],
         required=False,
     )
     qty_col = detect_column(df, ["Quantity", "Qty", "Order Qty", "Purchase Qty", "Units"], required=False)
@@ -386,6 +394,9 @@ def build_purchase_summary(purchase_file: str | Path | BinaryIO | BytesIO | None
         ["Unit Cost", "Unit Price", "Wholesale Price", "Cost", "Price", "FOB", "Purchase Price"],
         required=False,
     )
+    sku_col = detect_column(df, ["SKU", "Product SKU", "Item SKU", "JAN", "Barcode", "Product Code"], required=False)
+    product_col = detect_column(df, ["Product", "Product Name", "Product / Service", "Description", "Item Name"], required=False)
+    barcode_col = detect_column(df, ["Barcode", "JAN", "UPC", "EAN"], required=False)
 
     detected = {
         "purchase_date": date_col or "Not detected",
@@ -393,6 +404,10 @@ def build_purchase_summary(purchase_file: str | Path | BinaryIO | BytesIO | None
         "purchase_amount": amount_col or "Not detected",
         "purchase_qty": qty_col or "Not detected",
         "purchase_unit_cost": unit_cost_col or "Not detected",
+        "purchase_sku": sku_col or "Not detected",
+        "purchase_product": product_col or "Not detected",
+        "purchase_barcode": barcode_col or "Not detected",
+        "purchase_filter_keyword": purchase_filter_keyword or "Not used",
     }
 
     if amount_col is None and not (qty_col and unit_cost_col):
@@ -401,6 +416,16 @@ def build_purchase_summary(purchase_file: str | Path | BinaryIO | BytesIO | None
         raise ValueError("Purchase report needs a Date/PO Date column or a Year column.")
 
     work = df.copy()
+    raw_records = len(work)
+    keyword = purchase_filter_keyword.strip()
+    if keyword:
+        text_cols = [c for c in [product_col, sku_col, barcode_col, detect_column(df, ["Supplier", "Brand", "Vendor"], required=False)] if c]
+        if not text_cols:
+            raise ValueError("Purchase keyword filter was provided, but no Product/SKU/Barcode/Supplier text columns were detected.")
+        mask = pd.Series(False, index=work.index)
+        for col in text_cols:
+            mask = mask | work[col].astype(str).str.contains(keyword, case=False, na=False)
+        work = work[mask].copy()
     if date_col:
         work["_date"] = pd.to_datetime(work[date_col], errors="coerce")
         work["_year"] = work["_date"].dt.year
@@ -437,20 +462,29 @@ def build_purchase_summary(purchase_file: str | Path | BinaryIO | BytesIO | None
             }
         )
     summary = pd.DataFrame(rows)
-    detected["purchase_total_records"] = len(work)
-    return summary, detected
+    sku_summary = None
+    if sku_col or product_col:
+        group_cols = [c for c in [sku_col, product_col] if c]
+        aggregations = {"Purchase Amount": ("_purchase_amount", "sum"), "Record Count": ("_purchase_amount", "count")}
+        if qty_col:
+            aggregations["Quantity"] = (qty_col, lambda s: pd.to_numeric(s, errors="coerce").fillna(0).sum())
+        sku_summary = work.groupby(group_cols, dropna=False).agg(**aggregations).reset_index().sort_values("Purchase Amount", ascending=False)
+    detected["purchase_total_records_before_filter"] = raw_records
+    detected["purchase_total_records_after_filter"] = len(work)
+    return summary, sku_summary, detected
 
 
 def build_analysis(
     sales_file: str | Path | BinaryIO | BytesIO,
     stock_file: str | Path | BinaryIO | BytesIO,
     catalogue_file: str | Path | BinaryIO | BytesIO | None = None,
-    purchase_file: str | Path | BinaryIO | BytesIO | None = None,
+    purchase_file: str | Path | BinaryIO | BytesIO | list[str | Path | BinaryIO | BytesIO] | None = None,
+    purchase_filter_keyword: str = "",
 ) -> AnalysisResult:
     sales_df = read_excel_any(sales_file)
     stock_df = read_excel_any(stock_file)
     catalogue_df = read_excel_with_detected_header(catalogue_file) if catalogue_file else None
-    purchase_summary, purchase_cols = build_purchase_summary(purchase_file)
+    purchase_summary, purchase_sku_summary, purchase_cols = build_purchase_summary(purchase_file, purchase_filter_keyword)
 
     sales, sales_cols = aggregate_sales(sales_df)
     stock, stock_cols = aggregate_stock(stock_df)
@@ -537,8 +571,9 @@ def build_analysis(
     insights = build_insights(final, sabc_summary, inventory_status_summary, action_summary)
     if purchase_summary is not None:
         insights["purchase_summary"] = purchase_summary
+        insights["purchase_sku_summary"] = purchase_sku_summary
         insights["purchase_total"] = float(purchase_summary["Purchase Amount"].sum())
-    return AnalysisResult(final, sabc_summary, inventory_status_summary, action_summary, matrix, purchase_summary, insights, {**sales_cols, **stock_cols, **catalogue_cols, **purchase_cols})
+    return AnalysisResult(final, sabc_summary, inventory_status_summary, action_summary, matrix, purchase_summary, purchase_sku_summary, insights, {**sales_cols, **stock_cols, **catalogue_cols, **purchase_cols})
 
 
 def summarize(final: pd.DataFrame, group_col: str) -> pd.DataFrame:
@@ -768,6 +803,8 @@ def generate_excel(result: AnalysisResult) -> bytes:
     ]
     if result.purchase_summary is not None:
         sheets.append(("Purchase Summary", result.purchase_summary, "PurchaseSummaryTable", []))
+        if result.purchase_sku_summary is not None and not result.purchase_sku_summary.empty:
+            sheets.append(("Purchase by SKU", result.purchase_sku_summary, "PurchaseBySKUTable", []))
     if result.insights.get("catalogue_present"):
         if "category_summary" in result.insights:
             sheets.append(("Category Summary", result.insights["category_summary"], "CategorySummaryTable", ["Qty Share"]))
@@ -1078,6 +1115,10 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
             "This section summarizes total purchase amount by calendar year. 2026 is calculated as year-to-date based on the uploaded purchase dates."
         )
         add_table(doc, result.purchase_summary, max_rows=10)
+        if result.purchase_sku_summary is not None and not result.purchase_sku_summary.empty:
+            doc.add_heading("Purchase Amount by SKU", level=2)
+            doc.add_paragraph("This table ranks purchase lines by SKU/Product after applying the purchase keyword filter when provided.")
+            add_table(doc, result.purchase_sku_summary, max_rows=15)
 
     if has_catalogue:
         add_catalogue_report_sections(doc, insights)
@@ -1142,7 +1183,8 @@ def generate_outputs(
     stock_file: str | Path | BinaryIO | BytesIO,
     catalogue_file: str | Path | BinaryIO | BytesIO | None = None,
     purchase_file: str | Path | BinaryIO | BytesIO | None = None,
+    purchase_filter_keyword: str = "",
     brand_name: str = "Brand",
 ) -> tuple[AnalysisResult, bytes, bytes]:
-    result = build_analysis(sales_file, stock_file, catalogue_file, purchase_file)
+    result = build_analysis(sales_file, stock_file, catalogue_file, purchase_file, purchase_filter_keyword)
     return result, generate_excel(result), generate_word_report(result, brand_name=brand_name)
