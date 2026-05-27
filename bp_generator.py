@@ -373,9 +373,9 @@ def build_purchase_summary(
     purchase_file: str | Path | BinaryIO | BytesIO | list[str | Path | BinaryIO | BytesIO] | None,
     purchase_filter_keyword: str = "",
     purchase_years: list[int] | None = None,
-) -> tuple[pd.DataFrame | None, pd.DataFrame | None, dict]:
+) -> tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, dict]:
     if purchase_file is None:
-        return None, None, {}
+        return None, None, None, {}
     files = purchase_file if isinstance(purchase_file, list) else [purchase_file]
     frames = []
     for idx, file in enumerate(files):
@@ -474,15 +474,58 @@ def build_purchase_summary(
         )
     summary = pd.DataFrame(rows)
     sku_summary = None
+    purchase_key_summary = None
     if sku_col or product_col:
         group_cols = [c for c in [sku_col, product_col] if c]
         aggregations = {"Purchase Amount": ("_purchase_amount", "sum"), "Record Count": ("_purchase_amount", "count")}
         if qty_col:
             aggregations["Quantity"] = (qty_col, lambda s: pd.to_numeric(s, errors="coerce").fillna(0).sum())
         sku_summary = work.groupby(group_cols, dropna=False).agg(**aggregations).reset_index().sort_values("Purchase Amount", ascending=False)
+        year_amount = work.pivot_table(index=group_cols, columns="_year", values="_purchase_amount", aggfunc="sum", fill_value=0).reset_index()
+        year_amount.columns = [f"{int(col)} Purchase Amount" if isinstance(col, (int, float, np.integer, np.floating)) else col for col in year_amount.columns]
+        if qty_col:
+            work["_purchase_qty"] = pd.to_numeric(work[qty_col], errors="coerce").fillna(0)
+            year_qty = work.pivot_table(index=group_cols, columns="_year", values="_purchase_qty", aggfunc="sum", fill_value=0).reset_index()
+            year_qty.columns = [f"{int(col)} Purchase Qty" if isinstance(col, (int, float, np.integer, np.floating)) else col for col in year_qty.columns]
+            sku_summary = sku_summary.merge(year_amount, on=group_cols, how="left").merge(year_qty, on=group_cols, how="left")
+        else:
+            sku_summary = sku_summary.merge(year_amount, on=group_cols, how="left")
+        for year in [2024, 2025, 2026]:
+            amount_col_name = f"{year} Purchase Amount"
+            if amount_col_name not in sku_summary.columns:
+                sku_summary[amount_col_name] = 0
+            qty_col_name = f"{year} Purchase Qty"
+            if qty_col and qty_col_name not in sku_summary.columns:
+                sku_summary[qty_col_name] = 0
+        ordered_cols = group_cols + ["Purchase Amount", "Record Count"]
+        if qty_col and "Quantity" in sku_summary.columns:
+            ordered_cols.append("Quantity")
+        ordered_cols += [f"{year} Purchase Amount" for year in [2024, 2025, 2026]]
+        ordered_cols += [f"{year} Purchase Qty" for year in [2024, 2025, 2026] if f"{year} Purchase Qty" in sku_summary.columns]
+        sku_summary = sku_summary[[col for col in ordered_cols if col in sku_summary.columns]]
+
+    key_records = []
+    key_cols = [c for c in [sku_col, barcode_col] if c]
+    work["_line_id"] = range(len(work))
+    for key_col in key_cols:
+        temp = work[["_line_id", key_col, "_year", "_purchase_amount"]].copy()
+        temp["_purchase_key"] = temp[key_col].map(normalize_sku)
+        temp = temp[temp["_purchase_key"] != ""]
+        key_records.append(temp[["_line_id", "_purchase_key", "_year", "_purchase_amount"]])
+    if key_records:
+        key_work = pd.concat(key_records, ignore_index=True).drop_duplicates(subset=["_line_id", "_purchase_key"])
+        purchase_key_summary = key_work.pivot_table(index="_purchase_key", columns="_year", values="_purchase_amount", aggfunc="sum", fill_value=0).reset_index()
+        purchase_key_summary.columns = [
+            f"{int(col)} Purchase Amount" if isinstance(col, (int, float, np.integer, np.floating)) else col for col in purchase_key_summary.columns
+        ]
+        for year in [2024, 2025, 2026]:
+            col = f"{year} Purchase Amount"
+            if col not in purchase_key_summary.columns:
+                purchase_key_summary[col] = 0
+        purchase_key_summary["Total Purchase Amount"] = purchase_key_summary[[f"{year} Purchase Amount" for year in [2024, 2025, 2026]]].sum(axis=1)
     detected["purchase_total_records_before_filter"] = raw_records
     detected["purchase_total_records_after_filter"] = len(work)
-    return summary, sku_summary, detected
+    return summary, sku_summary, purchase_key_summary, detected
 
 
 def build_analysis(
@@ -496,7 +539,7 @@ def build_analysis(
     sales_df = read_excel_any(sales_file)
     stock_df = read_excel_any(stock_file)
     catalogue_df = read_excel_with_detected_header(catalogue_file) if catalogue_file else None
-    purchase_summary, purchase_sku_summary, purchase_cols = build_purchase_summary(purchase_file, purchase_filter_keyword, purchase_years)
+    purchase_summary, purchase_sku_summary, purchase_key_summary, purchase_cols = build_purchase_summary(purchase_file, purchase_filter_keyword, purchase_years)
 
     sales, sales_cols = aggregate_sales(sales_df)
     stock, stock_cols = aggregate_stock(stock_df)
@@ -552,6 +595,10 @@ def build_analysis(
     final["Action"] = final["Inventory Status"].map(action_map)
     final, catalogue_cols = apply_catalogue(final, catalogue_df)
     final = apply_lifecycle_strategy(final)
+    if purchase_key_summary is not None:
+        final = final.merge(purchase_key_summary, left_on="Product SKU", right_on="_purchase_key", how="left").drop(columns=["_purchase_key"], errors="ignore")
+        for col in ["2024 Purchase Amount", "2025 Purchase Amount", "2026 Purchase Amount", "Total Purchase Amount"]:
+            final[col] = pd.to_numeric(final.get(col, 0), errors="coerce").fillna(0)
 
     base_cols = [
         "Product SKU",
@@ -569,6 +616,8 @@ def build_analysis(
         "Inventory Status",
         "Action",
     ]
+    purchase_cols_in_final = [c for c in ["2024 Purchase Amount", "2025 Purchase Amount", "2026 Purchase Amount", "Total Purchase Amount"] if c in final.columns]
+    base_cols = base_cols + purchase_cols_in_final
     lifecycle_cols = [c for c in ["Recommendation / Lifecycle Status", "Lifecycle Type", "Lifecycle Action", "Lifecycle Note"] if c in final.columns]
     base_cols = base_cols + lifecycle_cols
     extra_cols = [c for c in final.columns if c not in base_cols + ["On Hand"]]
@@ -1101,6 +1150,10 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
             ["Coverage", "Adjusted Future Inventory / Avg Monthly Sales"],
             ["Inventory Status", "Stockout, Urgent, Healthy, Monitor, Overstock, or No Sales / Review"],
             ["Action", "Operational recommendation linked to inventory status"],
+            ["2024 Purchase Amount", "PO line purchase amount matched to this SKU from the 2024 uploaded PO file"],
+            ["2025 Purchase Amount", "PO line purchase amount matched to this SKU from the 2025 uploaded PO file"],
+            ["2026 Purchase Amount", "PO line purchase amount matched to this SKU from the 2026 YTD uploaded PO file"],
+            ["Total Purchase Amount", "Combined matched purchase amount across uploaded PO files"],
             ["Lifecycle Type", "Normalized catalogue recommendation status, such as New / Coming Soon, Discontinued, Display Risk, or Renewal"],
             ["Lifecycle Action", "Business action override driven by catalogue recommendation when applicable"],
             ["Lifecycle Note", "Explanation of why catalogue recommendation changes the SKU strategy"],
@@ -1131,6 +1184,23 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
             doc.add_heading("Purchase Amount by SKU", level=2)
             doc.add_paragraph("This table ranks purchase lines by SKU/Product after applying the purchase keyword filter when provided.")
             add_table(doc, result.purchase_sku_summary, max_rows=15)
+            integrated_purchase_cols = [
+                "Product SKU",
+                "Product Name",
+                "Qty",
+                "SABC Type",
+                "Inventory Status",
+                "2024 Purchase Amount",
+                "2025 Purchase Amount",
+                "2026 Purchase Amount",
+                "Total Purchase Amount",
+            ]
+            integrated_purchase_cols = [col for col in integrated_purchase_cols if col in result.final.columns]
+            integrated_purchase = result.final[result.final.get("Total Purchase Amount", 0) > 0].sort_values("Total Purchase Amount", ascending=False)
+            if not integrated_purchase.empty:
+                doc.add_heading("Integrated Sales / Inventory / Purchase View", level=2)
+                doc.add_paragraph("This view connects matched PO purchase amount back to the main SKU analysis, so purchase investment can be compared against sales and inventory status.")
+                add_table(doc, integrated_purchase[integrated_purchase_cols], max_rows=15)
 
     if has_catalogue:
         add_catalogue_report_sections(doc, insights)

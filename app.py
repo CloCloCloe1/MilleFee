@@ -163,6 +163,10 @@ EXPLANATIONS = {
             "Coverage": "Adjusted Future Inventory divided by Avg Monthly Sales. It estimates how many months current/future stock can support.",
             "Inventory Status": "Stock health label based on coverage.",
             "Action": "Suggested business action based on Inventory Status.",
+            "2024 Purchase Amount": "PO line purchase amount matched to this SKU for the 2024 uploaded PO file.",
+            "2025 Purchase Amount": "PO line purchase amount matched to this SKU for the 2025 uploaded PO file.",
+            "2026 Purchase Amount": "PO line purchase amount matched to this SKU for the 2026 YTD uploaded PO file.",
+            "Total Purchase Amount": "Combined purchase amount from 2024, 2025, and 2026 uploaded PO files.",
         },
         "SABC Summary": {
             "SABC Type": "Sales priority class generated from cumulative sales contribution.",
@@ -227,6 +231,10 @@ EXPLANATIONS = {
             "Coverage": "Adjusted Future Inventory / Avg Monthly Sales\uff0c\u8868\u793a\u5e93\u5b58\u5927\u7ea6\u8fd8\u80fd\u652f\u6301\u51e0\u4e2a\u6708\u9500\u552e\u3002",
             "Inventory Status": "\u6839\u636e\u9500\u91cf\u548c coverage \u5224\u65ad\u5e93\u5b58\u72b6\u6001\u3002",
             "Action": "\u6839\u636e\u5e93\u5b58\u72b6\u6001\u81ea\u52a8\u7ed9\u51fa\u7684\u4e1a\u52a1\u5efa\u8bae\u3002",
+            "2024 Purchase Amount": "\u6309 SKU \u5339\u914d\u5230\u8be5\u4ea7\u54c1\u7684 2024 PO line \u91c7\u8d2d\u91d1\u989d\u3002",
+            "2025 Purchase Amount": "\u6309 SKU \u5339\u914d\u5230\u8be5\u4ea7\u54c1\u7684 2025 PO line \u91c7\u8d2d\u91d1\u989d\u3002",
+            "2026 Purchase Amount": "\u6309 SKU \u5339\u914d\u5230\u8be5\u4ea7\u54c1\u7684 2026 YTD PO line \u91c7\u8d2d\u91d1\u989d\u3002",
+            "Total Purchase Amount": "2024\u30012025\u30012026 \u4e09\u4e2a PO \u6587\u4ef6\u5339\u914d\u5230\u8be5 SKU \u7684\u91c7\u8d2d\u91d1\u989d\u5408\u8ba1\u3002",
         },
         "SABC Summary": {
             "SABC Type": "\u6839\u636e\u7d2f\u8ba1\u9500\u552e\u8d21\u732e\u5f97\u5230\u7684\u9500\u552e\u4f18\u5148\u7ea7\u3002",
@@ -485,6 +493,9 @@ def bp_generator_page(t: dict, language: str):
                 view[col] = view[col].map(lambda x: f"{x:.1%}" if pd.notna(x) else "")
         if "Coverage" in view:
             view["Coverage"] = view["Coverage"].map(lambda x: "" if pd.isna(x) else f"{x:,.2f}")
+        for col in ["2024 Purchase Amount", "2025 Purchase Amount", "2026 Purchase Amount", "Total Purchase Amount"]:
+            if col in view:
+                view[col] = view[col].map(lambda x: f"{x:,.2f}" if pd.notna(x) else "")
         st.dataframe(view, use_container_width=True, height=520)
 
     with tab2:
