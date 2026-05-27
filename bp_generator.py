@@ -894,7 +894,7 @@ def add_catalogue_report_sections(doc: Document, insights: dict):
         add_table(doc, insights["moq_risk_table"], max_rows=10)
 
 
-def generate_word_report(result: AnalysisResult, brand_name: str = "MilleFee") -> bytes:
+def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> bytes:
     doc = Document()
     section = doc.sections[0]
     section.top_margin = Inches(0.7)
@@ -1047,7 +1047,7 @@ def generate_outputs(
     sales_file: str | Path | BinaryIO | BytesIO,
     stock_file: str | Path | BinaryIO | BytesIO,
     catalogue_file: str | Path | BinaryIO | BytesIO | None = None,
-    brand_name: str = "MilleFee",
+    brand_name: str = "Brand",
 ) -> tuple[AnalysisResult, bytes, bytes]:
     result = build_analysis(sales_file, stock_file, catalogue_file)
     return result, generate_excel(result), generate_word_report(result, brand_name=brand_name)

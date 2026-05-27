@@ -1,9 +1,9 @@
-# MilleFee BP Generator
+# Beauty Brand BP Generator
 
 A Streamlit app that turns a Sales Report and Stock Levels Report into:
 
-- `MilleFee BP Data.xlsx`
-- `MilleFee Business Analysis.docx`
+- `[Brand] BP Data.xlsx`
+- `[Brand] Business Analysis.docx`
 
 The app auto-detects SKU, product name, quantity, available stock, incoming stock, and optional catalogue columns. It then builds SABC sales classification, inventory coverage, replenishment actions, Excel summaries, charts, and a Word business analysis report.
 

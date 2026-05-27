@@ -9,14 +9,14 @@ from auth import authenticate, change_own_password, create_user, delete_user, li
 from bp_generator import generate_outputs
 
 
-st.set_page_config(page_title="MilleFee BP Generator", page_icon="MF", layout="wide")
+st.set_page_config(page_title="Beauty Brand BP Generator", page_icon="BP", layout="wide")
 
 
 ZH = "\u4e2d\u6587"
 
 TEXT = {
     "English": {
-        "title": "MilleFee BP Generator",
+        "title": "Beauty Brand BP Generator",
         "caption": "Upload sales and stock files to generate a clean Excel analysis workbook and a Word business analysis report.",
         "language": "Language",
         "files": "Files",
@@ -33,8 +33,8 @@ TEXT = {
         "qty_sold": "12M Qty Sold",
         "urgent": "Urgent / Stockout",
         "overstock": "Overstock SKUs",
-        "download_excel": "Download MilleFee BP Data.xlsx",
-        "download_word": "Download MilleFee Business Analysis.docx",
+        "download_excel": "Download BP Data.xlsx",
+        "download_word": "Download Business Analysis.docx",
         "tab_final": "Final Analysis",
         "tab_summaries": "Summaries",
         "tab_priority": "Priority SKUs",
@@ -73,7 +73,7 @@ TEXT = {
         "default_admin_note": "Default admin is admin / change-me-now. Please change it after first login.",
     },
     ZH: {
-        "title": "\u004d\u0069\u006c\u006c\u0065\u0046\u0065\u0065 \u5546\u52a1\u5206\u6790\u751f\u6210\u5668",
+        "title": "\u7f8e\u5986\u54c1\u724c BP \u5206\u6790\u751f\u6210\u5668",
         "caption": "\u4e0a\u4f20\u9500\u552e\u62a5\u8868\u548c\u5e93\u5b58\u62a5\u8868\uff0c\u81ea\u52a8\u751f\u6210 Excel \u5206\u6790\u6587\u4ef6\u548c Word \u5546\u52a1\u5206\u6790\u62a5\u544a\u3002",
         "language": "\u8bed\u8a00",
         "files": "\u4e0a\u4f20\u6587\u4ef6",
@@ -90,8 +90,8 @@ TEXT = {
         "qty_sold": "\u8fc7\u53bb12\u4e2a\u6708\u9500\u91cf",
         "urgent": "\u7d27\u6025 / \u7f3a\u8d27",
         "overstock": "\u5e93\u5b58\u8fc7\u9ad8 SKU",
-        "download_excel": "\u4e0b\u8f7d MilleFee BP Data.xlsx",
-        "download_word": "\u4e0b\u8f7d MilleFee Business Analysis.docx",
+        "download_excel": "\u4e0b\u8f7d BP Data.xlsx",
+        "download_word": "\u4e0b\u8f7d Business Analysis.docx",
         "tab_final": "\u6700\u7ec8\u5206\u6790",
         "tab_summaries": "\u6c47\u603b",
         "tab_priority": "\u91cd\u70b9 SKU",
@@ -248,6 +248,11 @@ def metric_card(label: str, value: str, help_text: str | None = None):
     st.metric(label, value, help=help_text)
 
 
+def clean_brand_name(value: str) -> str:
+    cleaned = "".join(ch for ch in value.strip() if ch.isalnum() or ch in {" ", "-", "_"}).strip()
+    return cleaned or "Brand"
+
+
 def show_column_notes(language: str, table_key: str):
     notes = EXPLANATIONS[language][table_key]
     title = TEXT[language]["column_notes"]
@@ -354,7 +359,7 @@ def bp_generator_page(t: dict, language: str):
         sales_file = st.file_uploader(t["sales"], type=["xlsx", "xls"], key="sales")
         stock_file = st.file_uploader(t["stock"], type=["xlsx", "xls"], key="stock")
         catalogue_file = st.file_uploader(t["catalogue"], type=["xlsx", "xls"], key="catalogue")
-        brand_name = st.text_input(t["brand"], value="MilleFee")
+        brand_name = st.text_input(t["brand"], value="", placeholder="MilleFee / Judydoll / Joocyee")
         generate = st.button(t["generate"], type="primary", use_container_width=True)
 
     if not sales_file or not stock_file:
@@ -368,7 +373,7 @@ def bp_generator_page(t: dict, language: str):
                     load_file(sales_file),
                     load_file(stock_file),
                     load_file(catalogue_file),
-                    brand_name=brand_name.strip() or "MilleFee",
+                    brand_name=clean_brand_name(brand_name),
                 )
             except Exception as exc:
                 st.error(f"{t['failed']}: {exc}")
@@ -397,10 +402,11 @@ def bp_generator_page(t: dict, language: str):
 
     st.divider()
     download_cols = st.columns(2)
+    output_brand = clean_brand_name(brand_name)
     with download_cols[0]:
-        st.download_button(t["download_excel"], data=st.session_state["excel_bytes"], file_name="MilleFee BP Data.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+        st.download_button(t["download_excel"], data=st.session_state["excel_bytes"], file_name=f"{output_brand} BP Data.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     with download_cols[1]:
-        st.download_button(t["download_word"], data=st.session_state["word_bytes"], file_name="MilleFee Business Analysis.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+        st.download_button(t["download_word"], data=st.session_state["word_bytes"], file_name=f"{output_brand} Business Analysis.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
 
     tab1, tab2, tab3, tab4 = st.tabs([t["tab_final"], t["tab_summaries"], t["tab_priority"], t["tab_detected"]])
     with tab1:
