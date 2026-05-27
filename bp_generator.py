@@ -475,6 +475,7 @@ def aggregate_sales(
         sales_year_location_summary = drop_all_empty_columns(sales_year_location_summary, [SALES_AMOUNT_COL])
 
     sales_top_sku_by_year = None
+    sales_sku_year_summary = None
     if annual is not None and not annual.empty:
         top_aggs = {"Product SKU": ("_sku", "first"), "Product Name": (name_col, mode_or_first), "Qty": ("_qty", "sum")}
         if "_sales_amount" in annual.columns:
@@ -485,6 +486,21 @@ def aggregate_sales(
             top_aggs["_margin_avg"] = ("_sales_margin_raw", "mean")
         top_base = annual.groupby(["_year", "_sku"], as_index=False).agg(**top_aggs)
         top_base = apply_sales_margin_column(top_base).drop(columns=["_margin_avg"], errors="ignore")
+        group_cols = ["Product SKU", "Product Name"]
+        sales_sku_year_summary = top_base[group_cols].drop_duplicates("Product SKU").copy()
+        for year in sorted(top_base["_year"].dropna().astype(int).unique()):
+            year_data = top_base[top_base["_year"].astype(int) == year].copy()
+            metric_map = {
+                f"{year} Sales Qty": "Qty",
+                f"{year} Profit ($ CAD)": PROFIT_COL,
+                f"{year} Sales Margin %": SALES_MARGIN_COL,
+            }
+            if SALES_AMOUNT_COL in year_data.columns:
+                metric_map[f"{year} Sales Amount ($ CAD)"] = SALES_AMOUNT_COL
+            yearly_cols = ["Product SKU"] + [source for source in metric_map.values() if source in year_data.columns]
+            yearly = year_data[yearly_cols].copy()
+            yearly = yearly.rename(columns={source: target for target, source in metric_map.items() if source in yearly.columns})
+            sales_sku_year_summary = sales_sku_year_summary.merge(yearly, on="Product SKU", how="left")
         top_base["Rank"] = top_base.groupby("_year")["Qty"].rank(method="first", ascending=False).astype(int)
         top_cols = ["Year", "Rank", "Product SKU", "Product Name", "Qty", SALES_AMOUNT_COL, PROFIT_COL, SALES_MARGIN_COL]
         sales_top_sku_by_year = (
@@ -495,7 +511,7 @@ def aggregate_sales(
         sales_top_sku_by_year = sales_top_sku_by_year[[col for col in top_cols if col in sales_top_sku_by_year.columns]]
         sales_top_sku_by_year["Year"] = sales_top_sku_by_year["Year"].astype(int)
 
-    return grouped, sales_year_summary, sales_location_summary, sales_year_location_summary, sales_top_sku_by_year, {
+    return grouped, sales_year_summary, sales_location_summary, sales_year_location_summary, sales_top_sku_by_year, sales_sku_year_summary, {
         "sales_sku": sku_col,
         "sales_name": name_col,
         "sales_qty": qty_col,
@@ -1013,7 +1029,7 @@ def build_analysis(
         purchase_file, purchase_filter_keyword, purchase_years, location_filter
     )
 
-    sales, sales_year_summary, sales_location_summary, sales_year_location_summary, sales_top_sku_by_year, sales_cols = aggregate_sales(
+    sales, sales_year_summary, sales_location_summary, sales_year_location_summary, sales_top_sku_by_year, sales_sku_year_summary, sales_cols = aggregate_sales(
         sales_df,
         purchase_filter_keyword,
         manual_year_mode=bool(sales_years),
@@ -1095,6 +1111,7 @@ def build_analysis(
         "SABC Type",
         "Available",
         "Incoming",
+        "On Hand",
         "Future Inventory",
         "Adjusted Future Inventory",
         "Avg Monthly Sales",
@@ -1107,7 +1124,7 @@ def build_analysis(
     base_cols = base_cols + purchase_cols_in_final
     lifecycle_cols = [c for c in ["Recommendation / Lifecycle Status", "Lifecycle Type", "Lifecycle Action", "Lifecycle Note"] if c in final.columns]
     base_cols = base_cols + lifecycle_cols
-    extra_cols = [c for c in final.columns if c not in base_cols + ["On Hand"]]
+    extra_cols = [c for c in final.columns if c not in base_cols]
     final = final[base_cols + extra_cols]
 
     sabc_summary = summarize(final, "SABC Type")
@@ -1130,6 +1147,8 @@ def build_analysis(
         insights["sales_year_summary"] = sales_year_summary
     if sales_top_sku_by_year is not None:
         insights["sales_top_sku_by_year"] = sales_top_sku_by_year
+    if sales_sku_year_summary is not None:
+        insights["sales_sku_year_summary"] = sales_sku_year_summary
     if sales_purchase_year_summary is not None:
         insights["sales_purchase_year_summary"] = sales_purchase_year_summary
     if sales_year_location_summary is not None:
@@ -1985,6 +2004,103 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
 
     bio = BytesIO()
     doc.save(bio)
+    return bio.getvalue()
+
+
+def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO | None, result: AnalysisResult) -> bytes | None:
+    if catalogue_file is None:
+        return None
+    catalogue_df = read_excel_with_detected_header(catalogue_file)
+    sku_col = detect_column(catalogue_df, ["Product SKU", "SKU", "JAN", "Barcode", "Product Code", "Product Code Product Code", "Code"], label="Catalogue SKU")
+    enriched = catalogue_df.copy()
+    enriched["_match_sku"] = enriched[sku_col].map(normalize_sku)
+
+    final_cols = [
+        "Product SKU",
+        "Qty",
+        PROFIT_COL,
+        SALES_MARGIN_COL,
+        "SABC Type",
+        "Available",
+        "Incoming",
+        "On Hand",
+        "Future Inventory",
+        "Adjusted Future Inventory",
+        "Avg Monthly Sales",
+        "Coverage",
+        "Inventory Status",
+        "Action",
+    ]
+    final_cols += [col for col in ["2024 PO Cost ($ CAD)", "2025 PO Cost ($ CAD)", "2026 PO Cost ($ CAD)", TOTAL_PO_COST_COL] if col in result.final.columns]
+    final_match = result.final[[col for col in final_cols if col in result.final.columns]].copy()
+    final_match = final_match.rename(
+        columns={
+            "Product SKU": "_match_sku",
+            "Qty": "Latest Sales Qty",
+            PROFIT_COL: "Latest Profit ($ CAD)",
+            SALES_MARGIN_COL: "Latest Sales Margin %",
+        }
+    )
+    enriched = enriched.merge(final_match, on="_match_sku", how="left")
+
+    sales_sku_year_summary = result.insights.get("sales_sku_year_summary")
+    if isinstance(sales_sku_year_summary, pd.DataFrame) and not sales_sku_year_summary.empty:
+        sales_year_match = sales_sku_year_summary.drop(columns=["Product Name"], errors="ignore").copy()
+        sales_year_match["_match_sku"] = sales_year_match["Product SKU"].map(normalize_sku)
+        sales_year_match = sales_year_match.drop(columns=["Product SKU"], errors="ignore")
+        enriched = enriched.merge(sales_year_match, on="_match_sku", how="left")
+
+    purchase_sku_summary = result.purchase_sku_summary
+    if purchase_sku_summary is not None and not purchase_sku_summary.empty:
+        purchase_match = purchase_sku_summary.copy()
+        purchase_sku_col = detect_column(purchase_match, ["SKU", "Product SKU", "Item SKU", "JAN", "Barcode", "Product Code"], required=False)
+        if purchase_sku_col:
+            purchase_match["_match_sku"] = purchase_match[purchase_sku_col].map(normalize_sku)
+            purchase_cols = ["_match_sku"] + [
+                col
+                for col in purchase_match.columns
+                if re.fullmatch(r"20(24|25|26) Purchase Qty", str(col))
+            ]
+            purchase_match = purchase_match[purchase_cols].drop_duplicates("_match_sku")
+            enriched = enriched.merge(purchase_match, on="_match_sku", how="left")
+
+    ordered_new_cols = []
+    for year in [2024, 2025, 2026]:
+        ordered_new_cols += [
+            f"{year} Sales Qty",
+            f"{year} Profit ($ CAD)",
+            f"{year} Sales Margin %",
+            f"{year} Purchase Qty",
+            f"{year} PO Cost ($ CAD)",
+        ]
+    ordered_new_cols += [
+        "Latest Sales Qty",
+        "Latest Profit ($ CAD)",
+        "Latest Sales Margin %",
+        "SABC Type",
+        "Available",
+        "Incoming",
+        "On Hand",
+        "Future Inventory",
+        "Adjusted Future Inventory",
+        "Avg Monthly Sales",
+        "Coverage",
+        "Inventory Status",
+        "Action",
+        TOTAL_PO_COST_COL,
+    ]
+    original_cols = [col for col in catalogue_df.columns if col in enriched.columns]
+    appended_cols = [col for col in ordered_new_cols if col in enriched.columns]
+    other_cols = [col for col in enriched.columns if col not in original_cols + appended_cols + ["_match_sku"]]
+    enriched = enriched[original_cols + appended_cols + other_cols]
+    enriched = drop_all_empty_columns(enriched, [col for col in enriched.columns if "Sales Amount" in str(col)])
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Updated Catalogue"
+    write_df(ws, enriched, "UpdatedCatalogueTable", [col for col in enriched.columns if "Margin %" in str(col)])
+    bio = BytesIO()
+    wb.save(bio)
     return bio.getvalue()
 
 

@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from auth import authenticate, change_own_password, create_user, delete_user, list_users, reset_password
-from bp_generator import generate_outputs
+from bp_generator import generate_enriched_catalogue, generate_outputs
 
 
 st.set_page_config(page_title="Beauty Brand BP Generator", page_icon="BP", layout="wide")
@@ -46,6 +46,7 @@ TEXT = {
         "overstock": "Overstock SKUs",
         "download_excel": "Download BP Data.xlsx",
         "download_word": "Download Business Analysis.docx",
+        "download_catalogue": "Download Updated Catalogue.xlsx",
         "tab_final": "Final Analysis",
         "tab_summaries": "Summaries",
         "tab_priority": "Priority SKUs",
@@ -117,6 +118,7 @@ TEXT = {
         "overstock": "\u5e93\u5b58\u8fc7\u9ad8 SKU",
         "download_excel": "\u4e0b\u8f7d BP Data.xlsx",
         "download_word": "\u4e0b\u8f7d Business Analysis.docx",
+        "download_catalogue": "\u4e0b\u8f7d\u66f4\u65b0\u540e\u7684\u62a5\u4ef7\u5355.xlsx",
         "tab_final": "\u6700\u7ec8\u5206\u6790",
         "tab_summaries": "\u6c47\u603b",
         "tab_priority": "\u91cd\u70b9 SKU",
@@ -641,6 +643,7 @@ def bp_generator_page(t: dict, language: str):
                     sales_years=sales_years,
                     location_filter=location_filter.strip(),
                 )
+                enriched_catalogue_bytes = generate_enriched_catalogue(load_file(catalogue_file), result) if catalogue_file is not None else None
             except Exception as exc:
                 st.error(f"{t['failed']}: {exc}")
                 return
@@ -648,6 +651,7 @@ def bp_generator_page(t: dict, language: str):
         st.session_state["result"] = result
         st.session_state["excel_bytes"] = excel_bytes
         st.session_state["word_bytes"] = word_bytes
+        st.session_state["enriched_catalogue_bytes"] = enriched_catalogue_bytes
 
     if "result" not in st.session_state:
         st.warning(t["ready"])
@@ -701,12 +705,15 @@ def bp_generator_page(t: dict, language: str):
             location_year_view[col] = location_year_view[col].map(lambda x: "" if pd.isna(x) else f"{x:,.2f}")
         st.dataframe(location_year_view, use_container_width=True, hide_index=True)
 
-    download_cols = st.columns(2)
+    download_cols = st.columns(3)
     output_stem = output_file_stem(brand_name, location_filter)
     with download_cols[0]:
         st.download_button(t["download_excel"], data=st.session_state["excel_bytes"], file_name=f"{output_stem}_BP_Data.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     with download_cols[1]:
         st.download_button(t["download_word"], data=st.session_state["word_bytes"], file_name=f"{output_stem}_Business_Analysis.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+    with download_cols[2]:
+        if st.session_state.get("enriched_catalogue_bytes"):
+            st.download_button(t["download_catalogue"], data=st.session_state["enriched_catalogue_bytes"], file_name=f"{output_stem}_Updated_Catalogue.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
     tab1, tab2, tab3, tab4 = st.tabs([t["tab_final"], t["tab_summaries"], t["tab_priority"], t["tab_detected"]])
     with tab1:
@@ -777,7 +784,7 @@ if "user" not in st.session_state:
 with st.sidebar:
     st.caption(f"{t['signed_in']}: {st.session_state['user']['username']} ({st.session_state['user']['role']})")
     if st.button(t["logout"], use_container_width=True):
-        for key in ["user", "result", "excel_bytes", "word_bytes"]:
+        for key in ["user", "result", "excel_bytes", "word_bytes", "enriched_catalogue_bytes"]:
             st.session_state.pop(key, None)
         st.rerun()
 
