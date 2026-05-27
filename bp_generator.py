@@ -2030,16 +2030,11 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
 
     final_cols = [
         "Product SKU",
-        "Qty",
-        PROFIT_COL,
-        SALES_MARGIN_COL,
         "SABC Type",
         "Available",
         "Incoming",
         "On Hand",
         "Future Inventory",
-        "Adjusted Future Inventory",
-        "Avg Monthly Sales",
         "Coverage",
         "Inventory Status",
         "Action",
@@ -2049,9 +2044,10 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
     final_match = final_match.rename(
         columns={
             "Product SKU": "_match_sku",
-            "Qty": "Latest Sales Qty",
-            PROFIT_COL: "Latest Profit ($ CAD)",
-            SALES_MARGIN_COL: "Latest Sales Margin %",
+            "Available": "Available (2026)",
+            "Incoming": "Incoming (2026)",
+            "On Hand": "On Hand (2026)",
+            "Future Inventory": "Future Inventory (2026)",
         }
     )
     enriched = enriched.merge(final_match, on="_match_sku", how="left")
@@ -2087,16 +2083,11 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
             f"{year} PO Cost ($ CAD)",
         ]
     ordered_new_cols += [
-        "Latest Sales Qty",
-        "Latest Profit ($ CAD)",
-        "Latest Sales Margin %",
         "SABC Type",
-        "Available",
-        "Incoming",
-        "On Hand",
-        "Future Inventory",
-        "Adjusted Future Inventory",
-        "Avg Monthly Sales",
+        "Available (2026)",
+        "Incoming (2026)",
+        "On Hand (2026)",
+        "Future Inventory (2026)",
         "Coverage",
         "Inventory Status",
         "Action",
