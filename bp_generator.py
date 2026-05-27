@@ -117,6 +117,14 @@ def apply_sales_margin_column(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def drop_all_empty_columns(df: pd.DataFrame, columns: Iterable[str]) -> pd.DataFrame:
+    out = df.copy()
+    for col in columns:
+        if col in out.columns and pd.to_numeric(out[col], errors="coerce").isna().all():
+            out = out.drop(columns=[col])
+    return out
+
+
 def first_existing_column(columns: Iterable[str], aliases: Iterable[str]) -> str | None:
     normalized = {normalize_header(c): c for c in columns}
     for alias in aliases:
@@ -382,6 +390,7 @@ def aggregate_sales(
             sales_year_summary[PROFIT_COL] = np.nan
         sales_year_summary = apply_sales_margin_column(sales_year_summary)
         sales_year_summary = sales_year_summary.drop(columns=["_margin_avg"], errors="ignore")
+        sales_year_summary = drop_all_empty_columns(sales_year_summary, [SALES_AMOUNT_COL])
 
     current_sales_year = None
     if manual_year_mode and annual is not None and not annual.empty:
@@ -430,6 +439,7 @@ def aggregate_sales(
             sales_location_summary[PROFIT_COL] = np.nan
         sales_location_summary = apply_sales_margin_column(sales_location_summary)
         sales_location_summary = sales_location_summary.drop(columns=["_margin_avg"], errors="ignore")
+        sales_location_summary = drop_all_empty_columns(sales_location_summary, [SALES_AMOUNT_COL])
 
     sales_year_location_summary = None
     if annual is not None and (location_col or manual_location):
@@ -462,6 +472,7 @@ def aggregate_sales(
             sales_year_location_summary[PROFIT_COL] = np.nan
         sales_year_location_summary = apply_sales_margin_column(sales_year_location_summary)
         sales_year_location_summary = sales_year_location_summary.drop(columns=["_margin_avg"], errors="ignore")
+        sales_year_location_summary = drop_all_empty_columns(sales_year_location_summary, [SALES_AMOUNT_COL])
 
     sales_top_sku_by_year = None
     if annual is not None and not annual.empty:
@@ -929,7 +940,8 @@ def build_latest_year_inventory_view(
         "Future Inventory",
     ]
     ordered = [col for col in ordered if col in view.columns]
-    return view[ordered].sort_values(["Year", "Location"], ascending=[False, True])
+    view = view[ordered].sort_values(["Year", "Location"], ascending=[False, True])
+    return drop_all_empty_columns(view, [SALES_AMOUNT_COL])
 
 
 def build_sales_purchase_year_summary(
@@ -980,7 +992,8 @@ def build_sales_purchase_year_summary(
         COST_PER_UNIT_COL,
         PO_SALES_RATIO_COL,
     ]
-    return view[[col for col in ordered if col in view.columns]].sort_values("Year")
+    view = view[[col for col in ordered if col in view.columns]].sort_values("Year")
+    return drop_all_empty_columns(view, [SALES_AMOUNT_COL, PO_SALES_RATIO_COL])
 
 
 def build_analysis(
@@ -1811,6 +1824,10 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
         add_key_value_paragraph(doc, "Current Inventory Logic", "Current inventory is compared only against the latest uploaded sales year, because the stock report is an up-to-date snapshot rather than historical inventory.")
 
     doc.add_heading("Excel Column Explanation", level=1)
+    visible_columns = set(result.final.columns)
+    for optional_df in [result.sales_year_summary, result.sales_purchase_year_summary, result.location_year_business_view]:
+        if optional_df is not None:
+            visible_columns.update(optional_df.columns)
     explanation = pd.DataFrame(
         [
             ["Qty", f"Total SKU quantity sold in the current analysis period ({current_year} when year-labeled sales files are uploaded)"],
@@ -1836,6 +1853,8 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
         ],
         columns=["Column", "Meaning"],
     )
+    if SALES_AMOUNT_COL not in visible_columns:
+        explanation = explanation[explanation["Column"] != SALES_AMOUNT_COL]
     add_table(doc, explanation, max_rows=20)
 
     doc.add_heading("Historical Sales & PO Trend (2024-2026)", level=1)
@@ -1856,7 +1875,7 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
         if amount_trend_png:
             doc.add_picture(amount_trend_png, width=Inches(6.5))
         else:
-            doc.add_paragraph("Sales Amount and Profit are blank because the uploaded Sales reports do not include amount/profit columns.")
+            doc.add_paragraph("Sales Amount chart is hidden because the uploaded Sales reports do not include a sales amount column.")
         margin_trend_png = make_margin_trend_chart_png(result.sales_purchase_year_summary)
         if margin_trend_png:
             doc.add_picture(margin_trend_png, width=Inches(6.5))

@@ -473,7 +473,7 @@ def show_sales_po_charts(df: pd.DataFrame):
 
     amount_cols = [col for col in ["Sales Amount ($ CAD)", "PO Cost ($ CAD)", "Profit ($ CAD)"] if col in trend.columns and trend[col].notna().any()]
     if "Sales Amount ($ CAD)" not in amount_cols:
-        st.info("Sales Amount and Profit are blank because the uploaded Sales reports do not include amount/profit columns.")
+        st.info("Sales Amount chart is hidden because the uploaded Sales reports do not include a sales amount column.")
     else:
         amount_data = trend.melt("Year", value_vars=amount_cols, var_name="Metric", value_name="Amount").dropna(subset=["Amount"])
         amount_chart = (
