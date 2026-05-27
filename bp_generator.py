@@ -1560,15 +1560,6 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
             f"{insights.get('renewal_count', 0):,} renewal items."
         )
 
-    doc.add_heading(f"Top 5 SKUs by {current_year} Sales Qty", level=2)
-    top_cols = ["Product SKU", "Product Name", "Qty", "Contribution %", "Cumulative %", "SABC Type", "Coverage", "Inventory Status", "Action"]
-    add_table(doc, insights["top_sku_table"][top_cols], max_rows=5)
-    if result.sales_top_sku_by_year is not None and not result.sales_top_sku_by_year.empty:
-        for year in sorted(result.sales_top_sku_by_year["Year"].dropna().unique()):
-            doc.add_heading(f"Top 5 SKUs - {int(year)}", level=2)
-            yearly_top = result.sales_top_sku_by_year[result.sales_top_sku_by_year["Year"] == year]
-            add_table(doc, yearly_top, max_rows=5)
-
     doc.add_heading("Data Sources", level=1)
     add_key_value_paragraph(doc, "Sales Report", "SKU-level quantity sold, product name, and month/year when available.")
     add_key_value_paragraph(doc, "Stock Levels Report", "SKU-level available stock, incoming stock, and on-hand inventory when available.")
@@ -1606,14 +1597,12 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     )
     add_table(doc, explanation, max_rows=20)
 
-    doc.add_heading(f"SABC Sales Analysis ({current_year})", level=1)
-    doc.add_paragraph(f"The SABC view uses {current_year} sales only, so replenishment can protect current winners while keeping slow movers controlled.")
-    add_table(doc, result.sabc_summary, max_rows=10)
-    sabc_png = make_sabc_chart_png(result.sabc_summary)
-    doc.add_picture(sabc_png, width=Inches(6.5))
-
+    doc.add_heading("Historical Sales & PO Trend (2024-2026)", level=1)
+    doc.add_paragraph(
+        "This section is for trend review. It keeps 2024, 2025, and 2026 YTD together so sales growth, SKU expansion, and PO cost efficiency can be compared by year."
+    )
     if result.sales_purchase_year_summary is not None and not result.sales_purchase_year_summary.empty:
-        doc.add_heading("Sales vs Purchase Trend by Year", level=1)
+        doc.add_heading("Sales vs Purchase Trend by Year", level=2)
         doc.add_paragraph(
             "This view compares uploaded sales files and PO files by the same year label. It helps identify whether PO cost is moving in line with sales demand. "
             "A lower PO Cost / Sales Qty usually means less purchasing cost was needed for each unit sold, but it should be read together with current stock and future replenishment needs."
@@ -1622,53 +1611,45 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     elif result.sales_year_summary is not None and not result.sales_year_summary.empty:
         doc.add_heading("Sales Trend by Year", level=1)
         add_table(doc, result.sales_year_summary, max_rows=10)
+    if result.sales_top_sku_by_year is not None and not result.sales_top_sku_by_year.empty:
+        for year in sorted(result.sales_top_sku_by_year["Year"].dropna().unique()):
+            doc.add_heading(f"Top 5 SKUs - {int(year)}", level=2)
+            yearly_top = result.sales_top_sku_by_year[result.sales_top_sku_by_year["Year"] == year]
+            add_table(doc, yearly_top, max_rows=5)
 
-    doc.add_heading(f"Inventory Coverage Analysis ({current_year} Sales + Current Stock)", level=1)
-    doc.add_paragraph(f"Coverage translates current stock into months of demand using {current_year} sales. Low coverage creates service risk; excessive coverage creates cash and warehouse pressure.")
-    add_table(doc, result.inventory_status_summary, max_rows=10)
-    status_png = make_bar_chart_png(result.inventory_status_summary, "Inventory Status", "SKU_Count", "Inventory Status by SKU Count")
-    doc.add_picture(status_png, width=Inches(6.5))
-
-    if result.purchase_summary is not None:
-        if result.purchase_sku_summary is not None and not result.purchase_sku_summary.empty:
-            doc.add_heading("PO Cost by SKU", level=2)
-            doc.add_paragraph("This table ranks PO lines by SKU/Product after applying the brand and location filters when provided.")
-            add_table(doc, result.purchase_sku_summary, max_rows=15)
-            integrated_purchase_cols = [
-                "Product SKU",
-                "Product Name",
-                "Qty",
-                "SABC Type",
-                "Inventory Status",
-                "2024 PO Cost ($ CAD)",
-                "2025 PO Cost ($ CAD)",
-                "2026 PO Cost ($ CAD)",
-                TOTAL_PO_COST_COL,
-            ]
-            integrated_purchase_cols = [col for col in integrated_purchase_cols if col in result.final.columns]
-            integrated_purchase = result.final[result.final.get(TOTAL_PO_COST_COL, 0) > 0].sort_values(TOTAL_PO_COST_COL, ascending=False)
-            if not integrated_purchase.empty:
-                doc.add_heading("Integrated Sales / Inventory / Purchase View", level=2)
-                doc.add_paragraph("This view connects matched PO cost back to the main SKU analysis, so purchase investment can be compared against sales and inventory status.")
-                add_table(doc, integrated_purchase[integrated_purchase_cols], max_rows=15)
-
+    doc.add_heading(f"Current Inventory & Replenishment Analysis ({current_year})", level=1)
+    doc.add_paragraph(
+        f"All inventory, SABC, replenishment, and overstock decisions below use {current_year} sales only, matched against the latest stock level file."
+    )
     if result.location_year_business_view is not None and not result.location_year_business_view.empty:
         latest_year = int(pd.to_numeric(result.location_year_business_view["Year"], errors="coerce").max())
-        doc.add_heading(f"{latest_year} Sales + Current Inventory View", level=1)
+        doc.add_heading(f"{latest_year} Sales + Current Inventory View", level=2)
         doc.add_paragraph(
             "This view compares the latest uploaded sales year with the current stock snapshot. "
             "Prior years are excluded from inventory comparison because today's available, incoming, on-hand, and future inventory are not historical stock levels."
         )
         add_table(doc, result.location_year_business_view, max_rows=20)
 
+    doc.add_heading(f"SABC Sales Analysis ({current_year})", level=2)
+    doc.add_paragraph(f"The SABC view uses {current_year} sales only, so replenishment can protect current winners while keeping slow movers controlled.")
+    add_table(doc, result.sabc_summary, max_rows=10)
+    sabc_png = make_sabc_chart_png(result.sabc_summary)
+    doc.add_picture(sabc_png, width=Inches(6.5))
+
+    doc.add_heading(f"Inventory Coverage Analysis ({current_year} Sales + Current Stock)", level=2)
+    doc.add_paragraph(f"Coverage translates current stock into months of demand using {current_year} sales. Low coverage creates service risk; excessive coverage creates cash and warehouse pressure.")
+    add_table(doc, result.inventory_status_summary, max_rows=10)
+    status_png = make_bar_chart_png(result.inventory_status_summary, "Inventory Status", "SKU_Count", "Inventory Status by SKU Count")
+    doc.add_picture(status_png, width=Inches(6.5))
+
     if has_catalogue:
         add_catalogue_report_sections(doc, insights)
 
-    doc.add_heading(f"Replenishment Priority ({current_year})", level=1)
+    doc.add_heading(f"Replenishment Priority ({current_year})", level=2)
     priority_cols = ["Product SKU", "Product Name", "Qty", "SABC Type", "Adjusted Future Inventory", "Coverage", "Inventory Status", "Action"]
     add_table(doc, insights["urgent_table"][priority_cols], max_rows=10)
 
-    doc.add_heading(f"Overstock Risk ({current_year})", level=1)
+    doc.add_heading(f"Overstock Risk ({current_year})", level=2)
     add_table(doc, insights["overstock_table"][priority_cols], max_rows=10)
 
     doc.add_heading("Future 6-Month Business Plan", level=1)
