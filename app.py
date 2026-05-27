@@ -70,7 +70,7 @@ TEXT = {
         "current_password": "Current password",
         "confirm": "Confirm",
         "security_note": "Passwords are stored as hashes. Admin can reset a user's password but cannot view the original password.",
-        "default_admin_note": "Default admin is admin / admin123. Please change it after first login.",
+        "default_admin_note": "Default admin is admin / change-me-now. Please change it after first login.",
     },
     ZH: {
         "title": "\u004d\u0069\u006c\u006c\u0065\u0046\u0065\u0065 \u5546\u52a1\u5206\u6790\u751f\u6210\u5668",
@@ -127,7 +127,7 @@ TEXT = {
         "current_password": "\u5f53\u524d\u5bc6\u7801",
         "confirm": "\u786e\u8ba4",
         "security_note": "\u5bc6\u7801\u4f1a\u52a0\u5bc6\u4fdd\u5b58\u3002Admin \u53ef\u4ee5\u91cd\u7f6e\u7528\u6237\u5bc6\u7801\uff0c\u4f46\u4e0d\u4f1a\u663e\u793a\u539f\u59cb\u660e\u6587\u5bc6\u7801\u3002",
-        "default_admin_note": "\u9ed8\u8ba4 admin \u8d26\u53f7\u662f admin / admin123\u3002\u9996\u6b21\u767b\u5f55\u540e\u8bf7\u5c3d\u5feb\u4fee\u6539\u3002",
+        "default_admin_note": "\u9ed8\u8ba4 admin \u8d26\u53f7\u662f admin / change-me-now\u3002\u9996\u6b21\u767b\u5f55\u540e\u8bf7\u5c3d\u5feb\u4fee\u6539\u3002",
     },
 }
 

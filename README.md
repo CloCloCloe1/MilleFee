@@ -20,7 +20,7 @@ The app starts with a default admin account:
 
 ```text
 Username: admin
-Password: admin123
+Password: change-me-now
 ```
 
 Change this password after the first login. Admin users can add users, delete users, reset user passwords, and change their own password. Passwords are stored as hashes, so the app does not show plaintext passwords.

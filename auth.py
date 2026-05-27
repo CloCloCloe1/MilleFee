@@ -10,7 +10,7 @@ from pathlib import Path
 
 USER_STORE = Path(".app_users.json")
 DEFAULT_ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-DEFAULT_ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+DEFAULT_ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "change-me-now")
 
 
 def _now() -> str:
@@ -35,6 +35,22 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 def ensure_user_store() -> None:
     if USER_STORE.exists():
+        users = json.loads(USER_STORE.read_text(encoding="utf-8"))
+        admin = users.get(DEFAULT_ADMIN_USERNAME)
+        if not admin:
+            users[DEFAULT_ADMIN_USERNAME] = {
+                "password_hash": hash_password(DEFAULT_ADMIN_PASSWORD),
+                "role": "admin",
+                "created_at": _now(),
+                "updated_at": _now(),
+                "must_change_password": True,
+            }
+            save_users(users)
+            return
+        if admin.get("role") == "admin" and admin.get("must_change_password", False):
+            admin["password_hash"] = hash_password(DEFAULT_ADMIN_PASSWORD)
+            admin["updated_at"] = _now()
+            save_users(users)
         return
     users = {
         DEFAULT_ADMIN_USERNAME: {
@@ -42,7 +58,7 @@ def ensure_user_store() -> None:
             "role": "admin",
             "created_at": _now(),
             "updated_at": _now(),
-            "must_change_password": DEFAULT_ADMIN_PASSWORD == "admin123",
+            "must_change_password": True,
         }
     }
     save_users(users)
