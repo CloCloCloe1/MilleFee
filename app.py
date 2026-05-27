@@ -54,6 +54,7 @@ TEXT = {
         "auto_detected": "Auto-detected Columns",
         "purchase_summary": "Purchase Summary",
         "purchase_sku_summary": "Purchase by SKU",
+        "purchase_location_summary": "Purchase by Location",
         "field": "Field",
         "detected_column": "Detected Column",
         "column_notes": "Column explanation",
@@ -118,6 +119,7 @@ TEXT = {
         "auto_detected": "\u81ea\u52a8\u8bc6\u522b\u7684\u5217\u540d",
         "purchase_summary": "\u91c7\u8d2d\u91d1\u989d\u6c47\u603b",
         "purchase_sku_summary": "\u6309 SKU \u6c47\u603b\u91c7\u8d2d\u91d1\u989d",
+        "purchase_location_summary": "\u6309 Location \u6c47\u603b\u91c7\u8d2d\u91d1\u989d",
         "field": "\u5b57\u6bb5",
         "detected_column": "\u8bc6\u522b\u5230\u7684\u5217\u540d",
         "column_notes": "\u5b57\u6bb5\u89e3\u91ca",
@@ -214,6 +216,12 @@ EXPLANATIONS = {
             "Record Count": "Number of PO lines included.",
             "Quantity": "Total purchased quantity when available.",
         },
+        "Purchase by Location": {
+            "Location": "Receiving or stock location from the PO file.",
+            "Purchase Amount": "Total purchase amount by location after applying the purchase keyword filter.",
+            "Record Count": "Number of PO lines included for this location.",
+            "2024/2025/2026 Purchase Amount": "Purchase amount by uploaded PO year for this location.",
+        },
     },
     ZH: {
         "Final Analysis": {
@@ -281,6 +289,12 @@ EXPLANATIONS = {
             "Purchase Amount": "\u5957\u7528\u91c7\u8d2d\u5173\u952e\u8bcd\u7b5b\u9009\u540e\u7684\u91c7\u8d2d\u91d1\u989d\u5408\u8ba1\u3002",
             "Record Count": "\u5305\u542b\u7684 PO lines \u6570\u91cf\u3002",
             "Quantity": "\u5982\u6587\u4ef6\u4e2d\u6709\u6570\u91cf\u5217\uff0c\u5219\u4e3a\u91c7\u8d2d\u6570\u91cf\u5408\u8ba1\u3002",
+        },
+        "Purchase by Location": {
+            "Location": "PO \u6587\u4ef6\u4e2d\u7684\u6536\u8d27 / \u5e93\u5b58 location\u3002",
+            "Purchase Amount": "\u5957\u7528\u54c1\u724c\u5173\u952e\u8bcd\u7b5b\u9009\u540e\uff0c\u8be5 location \u7684\u91c7\u8d2d\u91d1\u989d\u5408\u8ba1\u3002",
+            "Record Count": "\u8be5 location \u5305\u542b\u7684 PO lines \u6570\u91cf\u3002",
+            "2024/2025/2026 Purchase Amount": "\u8be5 location \u6309\u4e0a\u4f20\u5e74\u4efd\u62c6\u5206\u7684\u91c7\u8d2d\u91d1\u989d\u3002",
         },
     },
 }
@@ -475,6 +489,13 @@ def bp_generator_page(t: dict, language: str):
             sku_view = result.purchase_sku_summary.copy()
             sku_view["Purchase Amount"] = sku_view["Purchase Amount"].map(lambda x: f"{x:,.2f}")
             st.dataframe(sku_view, use_container_width=True, hide_index=True)
+        if result.purchase_location_summary is not None and not result.purchase_location_summary.empty:
+            st.subheader(t["purchase_location_summary"])
+            show_column_notes(language, "Purchase by Location")
+            location_view = result.purchase_location_summary.copy()
+            for col in [c for c in location_view.columns if "Purchase Amount" in c]:
+                location_view[col] = location_view[col].map(lambda x: f"{x:,.2f}")
+            st.dataframe(location_view, use_container_width=True, hide_index=True)
 
     download_cols = st.columns(2)
     output_brand = clean_brand_name(brand_name)

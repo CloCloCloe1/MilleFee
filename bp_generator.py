@@ -45,6 +45,8 @@ class AnalysisResult:
     matrix: pd.DataFrame
     purchase_summary: pd.DataFrame | None
     purchase_sku_summary: pd.DataFrame | None
+    purchase_location_summary: pd.DataFrame | None
+    purchase_sku_location_summary: pd.DataFrame | None
     insights: dict
     detected_columns: dict
 
@@ -404,6 +406,7 @@ def build_purchase_summary(
     sku_col = detect_column(df, ["SKU", "Product SKU", "Item SKU", "JAN", "Barcode", "Product Code"], required=False)
     product_col = detect_column(df, ["Product", "Product Name", "Product / Service", "Description", "Item Name"], required=False)
     barcode_col = detect_column(df, ["Barcode", "JAN", "UPC", "EAN"], required=False)
+    location_col = detect_column(df, ["Location", "Warehouse", "Receiving Location", "Stock Location"], required=False)
 
     detected = {
         "purchase_date": date_col or "Not detected",
@@ -414,6 +417,7 @@ def build_purchase_summary(
         "purchase_sku": sku_col or "Not detected",
         "purchase_product": product_col or "Not detected",
         "purchase_barcode": barcode_col or "Not detected",
+        "purchase_location": location_col or "Not detected",
         "purchase_filter_keyword": purchase_filter_keyword or "Not used",
         "purchase_year_mode": "Manual upload year" if purchase_years else "Detected from PO date/year",
     }
@@ -475,6 +479,8 @@ def build_purchase_summary(
     summary = pd.DataFrame(rows)
     sku_summary = None
     purchase_key_summary = None
+    location_summary = None
+    sku_location_summary = None
     if sku_col or product_col:
         group_cols = [c for c in [sku_col, product_col] if c]
         aggregations = {"Purchase Amount": ("_purchase_amount", "sum"), "Record Count": ("_purchase_amount", "count")}
@@ -504,6 +510,33 @@ def build_purchase_summary(
         ordered_cols += [f"{year} Purchase Qty" for year in [2024, 2025, 2026] if f"{year} Purchase Qty" in sku_summary.columns]
         sku_summary = sku_summary[[col for col in ordered_cols if col in sku_summary.columns]]
 
+    if location_col:
+        location_summary = (
+            work.groupby(location_col, dropna=False)
+            .agg(Purchase_Amount=("_purchase_amount", "sum"), Record_Count=("_purchase_amount", "count"))
+            .reset_index()
+            .rename(columns={location_col: "Location", "Purchase_Amount": "Purchase Amount", "Record_Count": "Record Count"})
+            .sort_values("Purchase Amount", ascending=False)
+        )
+        location_year = work.pivot_table(index=location_col, columns="_year", values="_purchase_amount", aggfunc="sum", fill_value=0).reset_index()
+        location_year.columns = [f"{int(col)} Purchase Amount" if isinstance(col, (int, float, np.integer, np.floating)) else "Location" for col in location_year.columns]
+        location_summary = location_summary.merge(location_year, on="Location", how="left")
+        for year in [2024, 2025, 2026]:
+            col = f"{year} Purchase Amount"
+            if col not in location_summary.columns:
+                location_summary[col] = 0
+        location_summary = location_summary[["Location", "Purchase Amount", "Record Count", "2024 Purchase Amount", "2025 Purchase Amount", "2026 Purchase Amount"]]
+
+        if sku_col or product_col:
+            sku_loc_group_cols = [c for c in [sku_col, product_col, location_col] if c]
+            sku_location_summary = (
+                work.groupby(sku_loc_group_cols, dropna=False)
+                .agg(Purchase_Amount=("_purchase_amount", "sum"), Record_Count=("_purchase_amount", "count"))
+                .reset_index()
+                .rename(columns={location_col: "Location", "Purchase_Amount": "Purchase Amount", "Record_Count": "Record Count"})
+                .sort_values("Purchase Amount", ascending=False)
+            )
+
     key_records = []
     key_cols = [c for c in [sku_col, barcode_col] if c]
     work["_line_id"] = range(len(work))
@@ -525,7 +558,7 @@ def build_purchase_summary(
         purchase_key_summary["Total Purchase Amount"] = purchase_key_summary[[f"{year} Purchase Amount" for year in [2024, 2025, 2026]]].sum(axis=1)
     detected["purchase_total_records_before_filter"] = raw_records
     detected["purchase_total_records_after_filter"] = len(work)
-    return summary, sku_summary, purchase_key_summary, detected
+    return summary, sku_summary, purchase_key_summary, location_summary, sku_location_summary, detected
 
 
 def build_analysis(
@@ -539,7 +572,9 @@ def build_analysis(
     sales_df = read_excel_any(sales_file)
     stock_df = read_excel_any(stock_file)
     catalogue_df = read_excel_with_detected_header(catalogue_file) if catalogue_file else None
-    purchase_summary, purchase_sku_summary, purchase_key_summary, purchase_cols = build_purchase_summary(purchase_file, purchase_filter_keyword, purchase_years)
+    purchase_summary, purchase_sku_summary, purchase_key_summary, purchase_location_summary, purchase_sku_location_summary, purchase_cols = build_purchase_summary(
+        purchase_file, purchase_filter_keyword, purchase_years
+    )
 
     sales, sales_cols = aggregate_sales(sales_df)
     stock, stock_cols = aggregate_stock(stock_df)
@@ -633,8 +668,22 @@ def build_analysis(
     if purchase_summary is not None:
         insights["purchase_summary"] = purchase_summary
         insights["purchase_sku_summary"] = purchase_sku_summary
+        insights["purchase_location_summary"] = purchase_location_summary
+        insights["purchase_sku_location_summary"] = purchase_sku_location_summary
         insights["purchase_total"] = float(purchase_summary["Purchase Amount"].sum())
-    return AnalysisResult(final, sabc_summary, inventory_status_summary, action_summary, matrix, purchase_summary, purchase_sku_summary, insights, {**sales_cols, **stock_cols, **catalogue_cols, **purchase_cols})
+    return AnalysisResult(
+        final,
+        sabc_summary,
+        inventory_status_summary,
+        action_summary,
+        matrix,
+        purchase_summary,
+        purchase_sku_summary,
+        purchase_location_summary,
+        purchase_sku_location_summary,
+        insights,
+        {**sales_cols, **stock_cols, **catalogue_cols, **purchase_cols},
+    )
 
 
 def summarize(final: pd.DataFrame, group_col: str) -> pd.DataFrame:
@@ -866,6 +915,10 @@ def generate_excel(result: AnalysisResult) -> bytes:
         sheets.append(("Purchase Summary", result.purchase_summary, "PurchaseSummaryTable", []))
         if result.purchase_sku_summary is not None and not result.purchase_sku_summary.empty:
             sheets.append(("Purchase by SKU", result.purchase_sku_summary, "PurchaseBySKUTable", []))
+        if result.purchase_location_summary is not None and not result.purchase_location_summary.empty:
+            sheets.append(("Purchase by Location", result.purchase_location_summary, "PurchaseByLocationTable", []))
+        if result.purchase_sku_location_summary is not None and not result.purchase_sku_location_summary.empty:
+            sheets.append(("Purchase SKU Location", result.purchase_sku_location_summary, "PurchaseSKULocationTable", []))
     if result.insights.get("catalogue_present"):
         if "category_summary" in result.insights:
             sheets.append(("Category Summary", result.insights["category_summary"], "CategorySummaryTable", ["Qty Share"]))
@@ -1201,6 +1254,14 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
                 doc.add_heading("Integrated Sales / Inventory / Purchase View", level=2)
                 doc.add_paragraph("This view connects matched PO purchase amount back to the main SKU analysis, so purchase investment can be compared against sales and inventory status.")
                 add_table(doc, integrated_purchase[integrated_purchase_cols], max_rows=15)
+        if result.purchase_location_summary is not None and not result.purchase_location_summary.empty:
+            doc.add_heading("Purchase Amount by Location", level=2)
+            doc.add_paragraph("This view separates purchase amount by receiving location, so PO investment can be reviewed without manually filtering location before upload.")
+            add_table(doc, result.purchase_location_summary, max_rows=10)
+        if result.purchase_sku_location_summary is not None and not result.purchase_sku_location_summary.empty:
+            doc.add_heading("Top SKU Purchase by Location", level=2)
+            doc.add_paragraph("This table shows the largest SKU/location purchase combinations after applying the brand keyword filter.")
+            add_table(doc, result.purchase_sku_location_summary, max_rows=15)
 
     if has_catalogue:
         add_catalogue_report_sections(doc, insights)
