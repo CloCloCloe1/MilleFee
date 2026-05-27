@@ -21,6 +21,9 @@ TEXT = {
         "language": "Language",
         "files": "Files",
         "sales": "Upload Sales Report",
+        "sales_2024": "Upload 2024 Sales Report",
+        "sales_2025": "Upload 2025 Sales Report",
+        "sales_2026": "Upload 2026 YTD Sales Report",
         "stock": "Upload Stock Levels",
         "catalogue": "Optional: Upload Catalogue / Price List",
         "purchase": "Optional: Upload Purchase / PO History",
@@ -35,7 +38,7 @@ TEXT = {
         "spinner": "Cleaning, merging, analyzing, and writing files...",
         "failed": "Generation failed",
         "total_skus": "Total SKUs",
-        "qty_sold": "12M Qty Sold",
+        "qty_sold": "Sales Qty",
         "urgent": "Urgent / Stockout",
         "overstock": "Overstock SKUs",
         "download_excel": "Download BP Data.xlsx",
@@ -53,6 +56,8 @@ TEXT = {
         "overstock_risk": "Overstock Risk",
         "auto_detected": "Auto-detected Columns",
         "purchase_summary": "Purchase Summary",
+        "sales_year_summary": "Sales Summary by Year",
+        "sales_purchase_year_summary": "Sales vs PO by Year",
         "purchase_sku_summary": "Purchase by SKU",
         "purchase_location_summary": "Purchase by Location",
         "location_year_view": "Year + Location Business View",
@@ -89,6 +94,9 @@ TEXT = {
         "language": "\u8bed\u8a00",
         "files": "\u4e0a\u4f20\u6587\u4ef6",
         "sales": "\u4e0a\u4f20\u9500\u552e\u62a5\u8868",
+        "sales_2024": "\u4e0a\u4f20 2024 Sales Report",
+        "sales_2025": "\u4e0a\u4f20 2025 Sales Report",
+        "sales_2026": "\u4e0a\u4f20 2026 YTD Sales Report",
         "stock": "\u4e0a\u4f20\u5e93\u5b58\u62a5\u8868",
         "catalogue": "\u53ef\u9009\uff1a\u4e0a\u4f20\u4ea7\u54c1\u76ee\u5f55 / \u4ef7\u683c\u8868",
         "purchase": "\u53ef\u9009\uff1a\u4e0a\u4f20\u91c7\u8d2d / PO \u5386\u53f2",
@@ -103,7 +111,7 @@ TEXT = {
         "spinner": "\u6b63\u5728\u6e05\u6d17\u3001\u5408\u5e76\u3001\u5206\u6790\u5e76\u751f\u6210\u6587\u4ef6...",
         "failed": "\u751f\u6210\u5931\u8d25",
         "total_skus": "SKU \u603b\u6570",
-        "qty_sold": "\u8fc7\u53bb12\u4e2a\u6708\u9500\u91cf",
+        "qty_sold": "\u9500\u552e\u6570\u91cf",
         "urgent": "\u7d27\u6025 / \u7f3a\u8d27",
         "overstock": "\u5e93\u5b58\u8fc7\u9ad8 SKU",
         "download_excel": "\u4e0b\u8f7d BP Data.xlsx",
@@ -121,6 +129,8 @@ TEXT = {
         "overstock_risk": "\u5e93\u5b58\u8fc7\u9ad8\u98ce\u9669",
         "auto_detected": "\u81ea\u52a8\u8bc6\u522b\u7684\u5217\u540d",
         "purchase_summary": "\u91c7\u8d2d\u91d1\u989d\u6c47\u603b",
+        "sales_year_summary": "\u6309\u5e74\u4efd\u6c47\u603b\u9500\u552e",
+        "sales_purchase_year_summary": "\u6309\u5e74\u4efd\u5bf9\u6bd4 Sales vs PO",
         "purchase_sku_summary": "\u6309 SKU \u6c47\u603b\u91c7\u8d2d\u91d1\u989d",
         "purchase_location_summary": "\u6309 Location \u6c47\u603b\u91c7\u8d2d\u91d1\u989d",
         "location_year_view": "\u6309\u5e74\u4efd + Location \u7684\u7efc\u5408\u89c6\u56fe",
@@ -159,7 +169,7 @@ EXPLANATIONS = {
         "Final Analysis": {
             "Product SKU": "Unique product code used to merge Sales and Stock reports.",
             "Product Name": "Product description from the Sales report; stock name is used only if sales name is missing.",
-            "Qty": "Total quantity sold in the latest available 12-month sales window.",
+            "Qty": "Total quantity sold from the uploaded sales period. If year-labeled sales files are uploaded, this is the combined quantity across those files.",
             "Contribution %": "SKU Qty divided by total Qty. Shows how much this SKU contributes to sales volume.",
             "Cumulative %": "Running total of Contribution % after SKUs are sorted from highest Qty to lowest Qty. Used to assign S/A/B/C type.",
             "SABC Type": "Sales priority class: S is the very top contribution, A is core, B is mid-tail, C is long-tail.",
@@ -167,7 +177,7 @@ EXPLANATIONS = {
             "Incoming": "Incoming inventory or stock on order from the stock report.",
             "Future Inventory": "Available + Incoming. This estimates stock after incoming inventory arrives.",
             "Adjusted Future Inventory": "MAX(0, Future Inventory). Negative stock is treated as zero usable stock.",
-            "Avg Monthly Sales": "Qty divided by 12. This represents average monthly sales based on the past 12 months.",
+            "Avg Monthly Sales": "Qty divided by 12. For multi-year uploads, use the yearly summary sheets for trend analysis and use this field as a simple coverage benchmark.",
             "Coverage": "Adjusted Future Inventory divided by Avg Monthly Sales. It estimates how many months current/future stock can support.",
             "Inventory Status": "Stock health label based on coverage.",
             "Action": "Suggested business action based on Inventory Status.",
@@ -179,7 +189,7 @@ EXPLANATIONS = {
         "SABC Summary": {
             "SABC Type": "Sales priority class generated from cumulative sales contribution.",
             "SKU_Count": "Number of SKUs in each SABC class.",
-            "Qty": "Past 12-month sales quantity for all SKUs in that class.",
+            "Qty": "Sales quantity from the uploaded sales period for all SKUs in that class.",
             "Avg_Coverage": "Average inventory coverage for SKUs in that class.",
             "Future_Inventory": "Total adjusted future inventory for SKUs in that class.",
             "Qty Share": "Qty in this SABC class divided by total Qty.",
@@ -187,7 +197,7 @@ EXPLANATIONS = {
         "Inventory Status Summary": {
             "Inventory Status": "Stock health group based on coverage and sales demand.",
             "SKU_Count": "Number of SKUs in each inventory status.",
-            "Qty": "Past 12-month sales quantity for SKUs in that status.",
+            "Qty": "Sales quantity from the uploaded sales period for SKUs in that status.",
             "Avg_Coverage": "Average months of inventory coverage for SKUs in that status.",
             "Future_Inventory": "Total adjusted future inventory for SKUs in that status.",
             "Qty Share": "Qty in this inventory status divided by total Qty.",
@@ -195,14 +205,14 @@ EXPLANATIONS = {
         "Action Summary": {
             "Action": "Recommended business action, such as Replenish, Monitor, Review PO, Reduce PO, or Review SKU.",
             "SKU_Count": "Number of SKUs assigned to this action.",
-            "Qty": "Past 12-month sales quantity for SKUs assigned to this action.",
+            "Qty": "Sales quantity from the uploaded sales period for SKUs assigned to this action.",
             "Avg_Coverage": "Average inventory coverage for SKUs assigned to this action.",
             "Future_Inventory": "Total adjusted future inventory for SKUs assigned to this action.",
             "Qty Share": "Qty assigned to this action divided by total Qty.",
         },
         "Matrix": {"Rows": "SABC sales priority type.", "Columns": "Inventory Status groups.", "Values": "Number of SKUs in each combination."},
         "Priority": {
-            "Qty": "Past 12-month sales quantity.",
+            "Qty": "Sales quantity from the uploaded sales period.",
             "Adjusted Future Inventory": "Usable future inventory after preventing negative stock.",
             "Coverage": "Months of stock coverage based on average monthly sales.",
             "Inventory Status": "Current inventory risk label.",
@@ -214,6 +224,19 @@ EXPLANATIONS = {
             "Period": "Full year or year-to-date period.",
             "Purchase Amount": "Total purchase amount from the uploaded Purchase / PO History file.",
             "Record Count": "Number of purchase records included in that year.",
+        },
+        "Sales Summary by Year": {
+            "Year": "Year assigned by the upload slot, or detected from the sales date when using a single sales file.",
+            "SKU Count": "Number of SKUs sold in that year.",
+            "Sales Qty": "Total sales quantity for the uploaded sales file assigned to that year.",
+            "Sales Amount": "Sales amount for that year when the sales report includes an amount column.",
+        },
+        "Sales vs PO by Year": {
+            "Year": "Year used to connect the sales file and PO file.",
+            "Sales Qty": "Sales quantity from the uploaded sales file for that year.",
+            "Purchase Amount": "PO purchase amount from the uploaded PO file for that year.",
+            "Purchase Amount / Sales Qty": "Purchase investment divided by units sold. Useful for trend comparison when sales amount is unavailable.",
+            "Purchase / Sales Amount": "Purchase amount divided by sales amount when sales amount is available.",
         },
         "Purchase by SKU": {
             "SKU": "SKU detected from PO line file.",
@@ -239,8 +262,8 @@ EXPLANATIONS = {
         "Sales by Location": {
             "Location": "Sales location detected from the Sales Report.",
             "SKU Count": "Number of selling SKUs in this location.",
-            "Qty": "Latest available 12-month sales quantity in this location.",
-            "Sales Amount": "Latest available 12-month sales amount in this location when available.",
+            "Qty": "Sales quantity in this location from the uploaded sales period.",
+            "Sales Amount": "Sales amount in this location from the uploaded sales period when available.",
         },
         "Stock by Location": {
             "Location": "Stock or warehouse location detected from the Stock Levels Report.",
@@ -254,7 +277,7 @@ EXPLANATIONS = {
         "Final Analysis": {
             "Product SKU": "\u7528\u4e8e\u8fde\u63a5 Sales \u548c Stock \u4e24\u4efd\u62a5\u8868\u7684\u552f\u4e00\u4ea7\u54c1\u7f16\u7801\u3002",
             "Product Name": "\u4ea7\u54c1\u540d\u79f0\uff0c\u4f18\u5148\u6765\u81ea\u9500\u552e\u62a5\u8868\u3002",
-            "Qty": "\u8fc7\u53bb 12 \u4e2a\u6708\u7684\u603b\u9500\u552e\u6570\u91cf\u3002",
+            "Qty": "\u4e0a\u4f20 sales \u533a\u95f4\u7684\u603b\u9500\u552e\u6570\u91cf\u3002\u5982\u679c\u4e0a\u4f20\u4e86\u591a\u4e2a\u5e74\u4efd sales file\uff0c\u8fd9\u91cc\u662f\u8fd9\u4e9b\u6587\u4ef6\u7684\u5408\u8ba1\u9500\u91cf\u3002",
             "Contribution %": "\u5355\u4e2a SKU \u7684 Qty / \u5168\u90e8 SKU \u7684\u603b Qty\u3002",
             "Cumulative %": "\u6309 Qty \u4ece\u9ad8\u5230\u4f4e\u6392\u5e8f\u540e\uff0cContribution % \u7684\u7d2f\u8ba1\u503c\u3002",
             "SABC Type": "\u9500\u552e\u4f18\u5148\u7ea7\uff1aS/A \u662f\u6838\u5fc3 SKU\uff0cB/C \u662f\u4e2d\u957f\u5c3e SKU\u3002",
@@ -262,7 +285,7 @@ EXPLANATIONS = {
             "Incoming": "\u5e93\u5b58\u62a5\u8868\u4e2d\u7684\u5728\u9014 / \u5373\u5c06\u5165\u5e93\u5e93\u5b58\u3002",
             "Future Inventory": "Available + Incoming\uff0c\u8868\u793a\u672a\u6765\u53ef\u7528\u5e93\u5b58\u9884\u4f30\u3002",
             "Adjusted Future Inventory": "MAX(0, Future Inventory)\uff0c\u8d1f\u5e93\u5b58\u6309 0 \u5904\u7406\u3002",
-            "Avg Monthly Sales": "Qty / 12\uff0c\u57fa\u4e8e\u8fc7\u53bb 12 \u4e2a\u6708\u8ba1\u7b97\u7684\u5e73\u5747\u6708\u9500\u91cf\u3002",
+            "Avg Monthly Sales": "Qty / 12\u3002\u5982\u679c\u4e0a\u4f20\u591a\u5e74 sales file\uff0c\u5efa\u8bae\u7528\u5e74\u5ea6\u6c47\u603b\u8868\u770b trend\uff0c\u8fd9\u4e00\u5217\u4f5c\u4e3a\u7b80\u5316\u7684 coverage \u53c2\u8003\u3002",
             "Coverage": "Adjusted Future Inventory / Avg Monthly Sales\uff0c\u8868\u793a\u5e93\u5b58\u5927\u7ea6\u8fd8\u80fd\u652f\u6301\u51e0\u4e2a\u6708\u9500\u552e\u3002",
             "Inventory Status": "\u6839\u636e\u9500\u91cf\u548c coverage \u5224\u65ad\u5e93\u5b58\u72b6\u6001\u3002",
             "Action": "\u6839\u636e\u5e93\u5b58\u72b6\u6001\u81ea\u52a8\u7ed9\u51fa\u7684\u4e1a\u52a1\u5efa\u8bae\u3002",
@@ -274,7 +297,7 @@ EXPLANATIONS = {
         "SABC Summary": {
             "SABC Type": "\u6839\u636e\u7d2f\u8ba1\u9500\u552e\u8d21\u732e\u5f97\u5230\u7684\u9500\u552e\u4f18\u5148\u7ea7\u3002",
             "SKU_Count": "\u6bcf\u4e2a SABC \u5206\u7c7b\u4e0b\u7684 SKU \u6570\u91cf\u3002",
-            "Qty": "\u8be5\u5206\u7c7b\u4e0b\u6240\u6709 SKU \u8fc7\u53bb 12 \u4e2a\u6708\u9500\u91cf\u5408\u8ba1\u3002",
+            "Qty": "\u8be5\u5206\u7c7b\u4e0b\u6240\u6709 SKU \u5728\u4e0a\u4f20 sales \u533a\u95f4\u5185\u7684\u9500\u91cf\u5408\u8ba1\u3002",
             "Avg_Coverage": "\u8be5\u5206\u7c7b\u4e0b SKU \u7684\u5e73\u5747\u5e93\u5b58\u8986\u76d6\u6708\u6570\u3002",
             "Future_Inventory": "\u8be5\u5206\u7c7b\u4e0b\u8c03\u6574\u540e\u672a\u6765\u5e93\u5b58\u5408\u8ba1\u3002",
             "Qty Share": "\u8be5\u5206\u7c7b Qty / \u5168\u90e8 Qty\u3002",
@@ -282,7 +305,7 @@ EXPLANATIONS = {
         "Inventory Status Summary": {
             "Inventory Status": "\u6839\u636e coverage \u548c\u9500\u552e\u9700\u6c42\u5f97\u5230\u7684\u5e93\u5b58\u5065\u5eb7\u72b6\u6001\u3002",
             "SKU_Count": "\u6bcf\u4e2a\u5e93\u5b58\u72b6\u6001\u4e0b\u7684 SKU \u6570\u91cf\u3002",
-            "Qty": "\u8be5\u5e93\u5b58\u72b6\u6001\u4e0b SKU \u7684\u8fc7\u53bb 12 \u4e2a\u6708\u9500\u91cf\u5408\u8ba1\u3002",
+            "Qty": "\u8be5\u5e93\u5b58\u72b6\u6001\u4e0b SKU \u5728\u4e0a\u4f20 sales \u533a\u95f4\u5185\u7684\u9500\u91cf\u5408\u8ba1\u3002",
             "Avg_Coverage": "\u8be5\u72b6\u6001\u4e0b SKU \u7684\u5e73\u5747\u5e93\u5b58\u8986\u76d6\u6708\u6570\u3002",
             "Future_Inventory": "\u8be5\u72b6\u6001\u4e0b SKU \u7684\u8c03\u6574\u540e\u672a\u6765\u5e93\u5b58\u5408\u8ba1\u3002",
             "Qty Share": "\u8be5\u72b6\u6001 Qty / \u5168\u90e8 Qty\u3002",
@@ -290,14 +313,14 @@ EXPLANATIONS = {
         "Action Summary": {
             "Action": "\u5efa\u8bae\u52a8\u4f5c\uff0c\u4f8b\u5982 Replenish\u3001Monitor\u3001Reduce PO \u6216 Review SKU\u3002",
             "SKU_Count": "\u88ab\u5206\u914d\u5230\u8be5\u52a8\u4f5c\u7684 SKU \u6570\u91cf\u3002",
-            "Qty": "\u8be5\u52a8\u4f5c\u4e0b SKU \u7684\u8fc7\u53bb 12 \u4e2a\u6708\u9500\u91cf\u5408\u8ba1\u3002",
+            "Qty": "\u8be5\u52a8\u4f5c\u4e0b SKU \u5728\u4e0a\u4f20 sales \u533a\u95f4\u5185\u7684\u9500\u91cf\u5408\u8ba1\u3002",
             "Avg_Coverage": "\u8be5\u52a8\u4f5c\u4e0b SKU \u7684\u5e73\u5747\u5e93\u5b58\u8986\u76d6\u6708\u6570\u3002",
             "Future_Inventory": "\u8be5\u52a8\u4f5c\u4e0b SKU \u7684\u8c03\u6574\u540e\u672a\u6765\u5e93\u5b58\u5408\u8ba1\u3002",
             "Qty Share": "\u8be5\u52a8\u4f5c Qty / \u5168\u90e8 Qty\u3002",
         },
         "Matrix": {"Rows": "SABC \u9500\u552e\u4f18\u5148\u7ea7\u5206\u7c7b\u3002", "Columns": "\u5e93\u5b58\u72b6\u6001\u5206\u7c7b\u3002", "Values": "\u6bcf\u4e2a\u7ec4\u5408\u4e0b\u7684 SKU \u6570\u91cf\u3002"},
         "Priority": {
-            "Qty": "\u8fc7\u53bb 12 \u4e2a\u6708\u9500\u552e\u6570\u91cf\u3002",
+            "Qty": "\u4e0a\u4f20 sales \u533a\u95f4\u5185\u7684\u9500\u552e\u6570\u91cf\u3002",
             "Adjusted Future Inventory": "\u5254\u9664\u8d1f\u5e93\u5b58\u540e\u7684\u53ef\u7528\u672a\u6765\u5e93\u5b58\u3002",
             "Coverage": "\u57fa\u4e8e\u5e73\u5747\u6708\u9500\u91cf\u8ba1\u7b97\u7684\u5e93\u5b58\u8986\u76d6\u6708\u6570\u3002",
             "Inventory Status": "\u5f53\u524d\u5e93\u5b58\u98ce\u9669\u6807\u7b7e\u3002",
@@ -309,6 +332,19 @@ EXPLANATIONS = {
             "Period": "\u5168\u5e74\u6216\u5e74\u521d\u81f3\u4eca\u533a\u95f4\u3002",
             "Purchase Amount": "\u4ece\u91c7\u8d2d / PO \u5386\u53f2\u6587\u4ef6\u4e2d\u6c47\u603b\u7684\u91c7\u8d2d\u91d1\u989d\u3002",
             "Record Count": "\u8be5\u5e74\u5ea6\u5305\u542b\u7684\u91c7\u8d2d\u8bb0\u5f55\u6570\u3002",
+        },
+        "Sales Summary by Year": {
+            "Year": "\u4e0a\u4f20\u65f6\u6807\u8bb0\u7684\u5e74\u4efd\uff0c\u6216\u5355\u4e2a sales \u6587\u4ef6\u4e2d\u4ece\u65e5\u671f\u8bc6\u522b\u7684\u5e74\u4efd\u3002",
+            "SKU Count": "\u8be5\u5e74\u6709\u9500\u552e\u7684 SKU \u6570\u91cf\u3002",
+            "Sales Qty": "\u8be5\u5e74\u4efd sales file \u4e2d\u7684\u9500\u552e\u6570\u91cf\u5408\u8ba1\u3002",
+            "Sales Amount": "\u5982 sales report \u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u8be5\u5e74\u9500\u552e\u91d1\u989d\u3002",
+        },
+        "Sales vs PO by Year": {
+            "Year": "\u7528\u4e8e\u8fde\u63a5 Sales file \u548c PO file \u7684\u5e74\u4efd\u3002",
+            "Sales Qty": "\u8be5\u5e74\u4e0a\u4f20 sales file \u4e2d\u7684\u9500\u91cf\u3002",
+            "Purchase Amount": "\u8be5\u5e74\u4e0a\u4f20 PO file \u4e2d\u7684\u91c7\u8d2d\u91d1\u989d\u3002",
+            "Purchase Amount / Sales Qty": "\u91c7\u8d2d\u91d1\u989d / \u9500\u552e\u6570\u91cf\uff0c\u9002\u5408\u6ca1\u6709 sales amount \u65f6\u770b\u8d8b\u52bf\u3002",
+            "Purchase / Sales Amount": "\u5982\u6709\u9500\u552e\u91d1\u989d\uff0c\u5219\u4e3a\u91c7\u8d2d\u91d1\u989d / \u9500\u552e\u91d1\u989d\u3002",
         },
         "Purchase by SKU": {
             "SKU": "\u4ece PO line \u6587\u4ef6\u8bc6\u522b\u5230\u7684 SKU\u3002",
@@ -334,8 +370,8 @@ EXPLANATIONS = {
         "Sales by Location": {
             "Location": "Sales Report \u4e2d\u8bc6\u522b\u5230\u7684\u9500\u552e location\u3002",
             "SKU Count": "\u8be5 location \u6709\u9500\u552e\u7684 SKU \u6570\u91cf\u3002",
-            "Qty": "\u6700\u65b0\u53ef\u7528 12 \u4e2a\u6708\u5728\u8be5 location \u7684\u9500\u91cf\u3002",
-            "Sales Amount": "\u5982\u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u6700\u65b0 12 \u4e2a\u6708\u8be5 location \u7684\u9500\u552e\u91d1\u989d\u3002",
+            "Qty": "\u4e0a\u4f20 sales \u533a\u95f4\u5185\uff0c\u8be5 location \u7684\u9500\u91cf\u3002",
+            "Sales Amount": "\u5982\u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u4e0a\u4f20 sales \u533a\u95f4\u5185\u8be5 location \u7684\u9500\u552e\u91d1\u989d\u3002",
         },
         "Stock by Location": {
             "Location": "Stock Levels Report \u4e2d\u8bc6\u522b\u5230\u7684\u5e93\u5b58 / \u4ed3\u5e93 location\u3002",
@@ -466,7 +502,10 @@ def bp_generator_page(t: dict, language: str):
 
     with st.sidebar:
         st.header(t["files"])
-        sales_file = st.file_uploader(t["sales"], type=["xlsx", "xls"], key="sales")
+        st.caption(t["sales"])
+        sales_2024 = st.file_uploader(t["sales_2024"], type=["xlsx", "xls"], key="sales_2024")
+        sales_2025 = st.file_uploader(t["sales_2025"], type=["xlsx", "xls"], key="sales_2025")
+        sales_2026 = st.file_uploader(t["sales_2026"], type=["xlsx", "xls"], key="sales_2026")
         stock_file = st.file_uploader(t["stock"], type=["xlsx", "xls"], key="stock")
         catalogue_file = st.file_uploader(t["catalogue"], type=["xlsx", "xls"], key="catalogue")
         st.caption(t["purchase"])
@@ -477,13 +516,20 @@ def bp_generator_page(t: dict, language: str):
         brand_name = st.text_input(t["brand"], value="", placeholder="MilleFee / Judydoll / Joocyee")
         generate = st.button(t["generate"], type="primary", use_container_width=True)
 
-    if not sales_file or not stock_file:
+    sales_uploads = [(2024, sales_2024), (2025, sales_2025), (2026, sales_2026)]
+    if not any(file is not None for _, file in sales_uploads) or not stock_file:
         st.info(t["missing_files"])
         return
 
     if generate:
         with st.spinner(t["spinner"]):
             try:
+                sales_files = []
+                sales_years = []
+                for year, file in sales_uploads:
+                    if file is not None:
+                        sales_files.append(load_file(file))
+                        sales_years.append(year)
                 purchase_files = []
                 purchase_years = []
                 for year, file in [(2024, purchase_2024), (2025, purchase_2025), (2026, purchase_2026)]:
@@ -491,13 +537,14 @@ def bp_generator_page(t: dict, language: str):
                         purchase_files.append(load_file(file))
                         purchase_years.append(year)
                 result, excel_bytes, word_bytes = generate_outputs(
-                    load_file(sales_file),
+                    sales_files,
                     load_file(stock_file),
                     load_file(catalogue_file),
                     purchase_files if purchase_files else None,
                     purchase_keyword.strip(),
                     purchase_years if purchase_files else None,
                     brand_name=clean_brand_name(brand_name),
+                    sales_years=sales_years,
                 )
             except Exception as exc:
                 st.error(f"{t['failed']}: {exc}")
@@ -525,6 +572,24 @@ def bp_generator_page(t: dict, language: str):
         metric_card(t["overstock"], f"{insights['overstock_count']:,}")
 
     st.divider()
+    if result.sales_purchase_year_summary is not None and not result.sales_purchase_year_summary.empty:
+        st.subheader(t["sales_purchase_year_summary"])
+        show_column_notes(language, "Sales vs PO by Year")
+        compare_view = result.sales_purchase_year_summary.copy()
+        for col in [c for c in compare_view.columns if "Amount" in c or c == "Purchase / Sales Amount"]:
+            if "Purchase / Sales Amount" == col:
+                compare_view[col] = compare_view[col].map(lambda x: "" if pd.isna(x) else f"{x:.1%}")
+            else:
+                compare_view[col] = compare_view[col].map(lambda x: "" if pd.isna(x) else f"{x:,.2f}")
+        st.dataframe(compare_view, use_container_width=True, hide_index=True)
+    elif result.sales_year_summary is not None and not result.sales_year_summary.empty:
+        st.subheader(t["sales_year_summary"])
+        show_column_notes(language, "Sales Summary by Year")
+        sales_year_view = result.sales_year_summary.copy()
+        if "Sales Amount" in sales_year_view:
+            sales_year_view["Sales Amount"] = sales_year_view["Sales Amount"].map(lambda x: f"{x:,.2f}")
+        st.dataframe(sales_year_view, use_container_width=True, hide_index=True)
+
     if result.purchase_summary is not None:
         st.subheader(t["purchase_summary"])
         show_column_notes(language, "Purchase Summary")
