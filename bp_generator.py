@@ -2124,7 +2124,8 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
 
     value_lookup = append_data.set_index("_match_sku")[append_cols].to_dict(orient="index")
     start_col = ws.max_column + 1
-    header_style_source = ws.cell(header_row, ws.max_column)
+    header_style_source = ws.cell(header_row, sku_col_idx)
+    subheader_style_source = ws.cell(header_row + 1, sku_col_idx) if header_row + 1 <= ws.max_row else header_style_source
     subheader_row = header_row + 1
     has_subheader = any(ws.cell(subheader_row, col).value not in (None, "") for col in range(1, ws.max_column + 1)) if subheader_row <= ws.max_row else False
     for offset, col_name in enumerate(append_cols):
@@ -2136,7 +2137,13 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
         cell.border = copy(header_style_source.border)
         cell.alignment = copy(header_style_source.alignment)
         if has_subheader:
-            ws.cell(subheader_row, start_col + offset, "")
+            sub_cell = ws.cell(subheader_row, start_col + offset, "")
+            if subheader_style_source.has_style:
+                sub_cell._style = copy(subheader_style_source._style)
+            sub_cell.font = copy(subheader_style_source.font)
+            sub_cell.fill = copy(subheader_style_source.fill)
+            sub_cell.border = copy(subheader_style_source.border)
+            sub_cell.alignment = copy(subheader_style_source.alignment)
         ws.column_dimensions[get_column_letter(start_col + offset)].width = min(max(len(str(col_name)) + 2, 14), 24)
 
     for row_idx in range(header_row + 1, ws.max_row + 1):
