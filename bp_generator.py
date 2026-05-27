@@ -18,8 +18,8 @@ from docx.enum.table import WD_ALIGN_VERTICAL
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
 from openpyxl import Workbook
-from openpyxl.chart import BarChart, PieChart, Reference
-from openpyxl.formatting.rule import CellIsRule
+from openpyxl.chart import BarChart, LineChart, PieChart, Reference
+from openpyxl.formatting.rule import CellIsRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
@@ -1244,6 +1244,25 @@ def add_excel_dashboard_charts(wb: Workbook):
     ws = wb["Final Analysis"]
     status_ws = wb["Inventory Status Summary"]
     sabc_ws = wb["SABC Summary"]
+    if "Sales PO Year Compare" in wb.sheetnames:
+        trend_ws = wb["Sales PO Year Compare"]
+        headers = [cell.value for cell in trend_ws[1]]
+        if trend_ws.max_row > 1 and "Sales Qty" in headers and COST_PER_UNIT_COL in headers:
+            line = LineChart()
+            line.title = "Sales Qty and PO Cost per Unit Trend"
+            line.y_axis.title = "Value"
+            line.x_axis.title = "Year"
+            sales_col = headers.index("Sales Qty") + 1
+            cost_unit_col = headers.index(COST_PER_UNIT_COL) + 1
+            cats = Reference(trend_ws, min_col=1, min_row=2, max_row=trend_ws.max_row)
+            sales_data = Reference(trend_ws, min_col=sales_col, max_col=sales_col, min_row=1, max_row=trend_ws.max_row)
+            cost_unit_data = Reference(trend_ws, min_col=cost_unit_col, max_col=cost_unit_col, min_row=1, max_row=trend_ws.max_row)
+            line.add_data(sales_data, titles_from_data=True)
+            line.add_data(cost_unit_data, titles_from_data=True)
+            line.set_categories(cats)
+            line.height = 7
+            line.width = 13
+            ws.add_chart(line, "P34")
     if status_ws.max_row > 1:
         chart = BarChart()
         chart.title = "Inventory Status by SKU Count"
@@ -1322,7 +1341,13 @@ def generate_excel(result: AnalysisResult) -> bytes:
         rng = f"{col}2:{col}{ws.max_row}"
         ws.conditional_formatting.add(rng, CellIsRule(operator="equal", formula=['"Stockout"'], fill=PatternFill("solid", fgColor="FCE4E4")))
         ws.conditional_formatting.add(rng, CellIsRule(operator="equal", formula=['"Urgent"'], fill=PatternFill("solid", fgColor="FFF4CC")))
+        ws.conditional_formatting.add(rng, CellIsRule(operator="equal", formula=['"Healthy"'], fill=PatternFill("solid", fgColor="DFF5E8")))
         ws.conditional_formatting.add(rng, CellIsRule(operator="equal", formula=['"Overstock"'], fill=PatternFill("solid", fgColor="EAF4FF")))
+    if "SABC Type" in headers:
+        col = get_column_letter(headers.index("SABC Type") + 1)
+        rng = f"{col}2:{col}{ws.max_row}"
+        ws.conditional_formatting.add(rng, CellIsRule(operator="equal", formula=['"S"'], fill=PatternFill("solid", fgColor="D9EAF7")))
+        ws.conditional_formatting.add(rng, CellIsRule(operator="equal", formula=['"A"'], fill=PatternFill("solid", fgColor="E4F3DD")))
     add_excel_dashboard_charts(wb)
     bio = BytesIO()
     wb.save(bio)
@@ -1368,6 +1393,71 @@ def make_bar_chart_png(df: pd.DataFrame, label_col: str, value_col: str, title: 
 
 def make_sabc_chart_png(df: pd.DataFrame) -> str:
     return make_bar_chart_png(df.sort_values("Qty", ascending=False), "SABC Type", "Qty", "Sales Quantity by SABC Type")
+
+
+def make_trend_chart_png(df: pd.DataFrame) -> str:
+    data = df[["Year", "Sales Qty", PO_COST_COL, COST_PER_UNIT_COL]].copy()
+    for col in ["Sales Qty", PO_COST_COL, COST_PER_UNIT_COL]:
+        data[col] = pd.to_numeric(data[col], errors="coerce")
+    data = data.sort_values("Year").dropna(subset=["Year"])
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    width, height = 900, 440
+    img = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(img)
+    title_font = try_font(24, True)
+    label_font = try_font(14)
+    small_font = try_font(12)
+    draw.text((32, 24), "Sales and PO Cost Trend (Indexed)", fill=f"#{ACCENT}", font=title_font)
+    left, top, right, bottom = 78, 92, width - 42, height - 76
+    draw.line((left, bottom, right, bottom), fill="#D2D2D7", width=2)
+    draw.line((left, top, left, bottom), fill="#D2D2D7", width=2)
+    years = data["Year"].astype(int).tolist()
+    if len(years) <= 1:
+        img.save(tmp.name, "PNG")
+        return tmp.name
+    series = [
+        ("Sales Qty", "0071E3"),
+        (PO_COST_COL, "1F8A5B"),
+        (COST_PER_UNIT_COL, "D92D20"),
+    ]
+    indexed = {}
+    max_value = 100.0
+    min_value = 100.0
+    for name, _ in series:
+        values = data[name].astype(float).tolist()
+        base = next((v for v in values if pd.notna(v) and v != 0), np.nan)
+        points = [np.nan if pd.isna(v) or pd.isna(base) or base == 0 else v / base * 100 for v in values]
+        indexed[name] = points
+        clean_points = [p for p in points if pd.notna(p)]
+        if clean_points:
+            max_value = max(max_value, max(clean_points))
+            min_value = min(min_value, min(clean_points))
+    pad = max((max_value - min_value) * 0.12, 10)
+    min_axis, max_axis = max(0, min_value - pad), max_value + pad
+    for tick in [min_axis, (min_axis + max_axis) / 2, max_axis]:
+        y = bottom - (tick - min_axis) / (max_axis - min_axis) * (bottom - top)
+        draw.line((left, y, right, y), fill="#F0F0F2", width=1)
+        draw.text((18, y - 8), f"{tick:,.0f}", fill=f"#{MID_GRAY}", font=small_font)
+    x_positions = [left + i * (right - left) / (len(years) - 1) for i in range(len(years))]
+    for x, year in zip(x_positions, years):
+        draw.text((x - 16, bottom + 14), str(year), fill=f"#{ACCENT}", font=label_font)
+    for name, color in series:
+        pts = []
+        for x, value in zip(x_positions, indexed[name]):
+            if pd.isna(value):
+                continue
+            y = bottom - (value - min_axis) / (max_axis - min_axis) * (bottom - top)
+            pts.append((x, y))
+            draw.ellipse((x - 4, y - 4, x + 4, y + 4), fill=f"#{color}")
+        if len(pts) >= 2:
+            draw.line(pts, fill=f"#{color}", width=4)
+    legend_x = left
+    for name, color in series:
+        draw.rectangle((legend_x, height - 38, legend_x + 14, height - 24), fill=f"#{color}")
+        draw.text((legend_x + 20, height - 40), name, fill=f"#{ACCENT}", font=small_font)
+        legend_x += 220
+    img.save(tmp.name, "PNG")
+    return tmp.name
 
 
 def set_doc_styles(doc: Document):
@@ -1608,6 +1698,8 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
             "A lower PO Cost / Sales Qty usually means less purchasing cost was needed for each unit sold, but it should be read together with current stock and future replenishment needs."
         )
         add_table(doc, result.sales_purchase_year_summary, max_rows=10)
+        trend_png = make_trend_chart_png(result.sales_purchase_year_summary)
+        doc.add_picture(trend_png, width=Inches(6.5))
     elif result.sales_year_summary is not None and not result.sales_year_summary.empty:
         doc.add_heading("Sales Trend by Year", level=1)
         add_table(doc, result.sales_year_summary, max_rows=10)

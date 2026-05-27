@@ -411,6 +411,35 @@ def show_sales_po_insights(language: str, df: pd.DataFrame):
             st.write(f"- {line}")
 
 
+def chart_ready(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    out = df[[col for col in columns if col in df.columns]].copy()
+    for col in out.columns:
+        if col != "Year" and col not in {"SABC Type", "Inventory Status", "Action"}:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+    return out
+
+
+def show_sales_po_charts(df: pd.DataFrame):
+    trend = chart_ready(df, ["Year", "Sales Qty", "PO Cost ($ CAD)", "PO Cost / Sales Qty ($ CAD)"])
+    if "Year" in trend and not trend.empty:
+        trend = trend.set_index("Year")
+        st.line_chart(trend[[col for col in ["Sales Qty", "PO Cost / Sales Qty ($ CAD)"] if col in trend.columns]])
+        if "PO Cost ($ CAD)" in trend.columns:
+            st.bar_chart(trend[["PO Cost ($ CAD)"]])
+
+
+def show_summary_charts(sabc_df: pd.DataFrame, status_df: pd.DataFrame):
+    cols = st.columns(2)
+    with cols[0]:
+        if not sabc_df.empty:
+            sabc_chart = chart_ready(sabc_df, ["SABC Type", "Qty"]).set_index("SABC Type")
+            st.bar_chart(sabc_chart)
+    with cols[1]:
+        if not status_df.empty:
+            status_chart = chart_ready(status_df, ["Inventory Status", "SKU_Count"]).set_index("Inventory Status")
+            st.bar_chart(status_chart)
+
+
 def apply_styles():
     st.markdown(
         """
@@ -578,6 +607,7 @@ def bp_generator_page(t: dict, language: str):
         st.subheader(t["sales_purchase_year_summary"])
         show_column_notes(language, "Sales vs PO by Year")
         show_sales_po_insights(language, result.sales_purchase_year_summary)
+        show_sales_po_charts(result.sales_purchase_year_summary)
         compare_view = result.sales_purchase_year_summary.copy()
         for col in [c for c in compare_view.columns if "($ CAD)" in c or c == "PO Cost / Sales Amount"]:
             if "PO Cost / Sales Amount" == col:
@@ -594,13 +624,7 @@ def bp_generator_page(t: dict, language: str):
         st.dataframe(sales_year_view, use_container_width=True, hide_index=True)
 
     if result.purchase_summary is not None:
-        if result.purchase_sku_summary is not None and not result.purchase_sku_summary.empty:
-            st.subheader(t["purchase_sku_summary"])
-            show_column_notes(language, "Purchase by SKU")
-            sku_view = result.purchase_sku_summary.copy()
-            for col in [c for c in sku_view.columns if "($ CAD)" in c]:
-                sku_view[col] = sku_view[col].map(lambda x: f"{x:,.2f}")
-            st.dataframe(sku_view, use_container_width=True, hide_index=True)
+        pass
     if result.location_year_business_view is not None and not result.location_year_business_view.empty:
         st.subheader(t["location_year_view"])
         show_column_notes(language, "Latest Inventory View")
@@ -632,6 +656,7 @@ def bp_generator_page(t: dict, language: str):
         st.dataframe(view, use_container_width=True, height=520)
 
     with tab2:
+        show_summary_charts(result.sabc_summary, result.inventory_status_summary)
         left, right = st.columns(2)
         with left:
             st.subheader(t["sabc_summary"])
