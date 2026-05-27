@@ -53,6 +53,7 @@ class AnalysisResult:
     sales_purchase_year_summary: pd.DataFrame | None
     sales_location_summary: pd.DataFrame | None
     sales_year_location_summary: pd.DataFrame | None
+    sales_top_sku_by_year: pd.DataFrame | None
     stock_location_summary: pd.DataFrame | None
     purchase_summary: pd.DataFrame | None
     purchase_sku_summary: pd.DataFrame | None
@@ -398,7 +399,21 @@ def aggregate_sales(
         if PROFIT_COL not in sales_year_location_summary.columns:
             sales_year_location_summary[PROFIT_COL] = np.nan
 
-    return grouped, sales_year_summary, sales_location_summary, sales_year_location_summary, {
+    sales_top_sku_by_year = None
+    if annual is not None and not annual.empty:
+        top_base = annual.groupby(["_year", "_sku"], as_index=False).agg(
+            **{"Product SKU": ("_sku", "first"), "Product Name": (name_col, mode_or_first), "Qty": ("_qty", "sum")}
+        )
+        top_base["Rank"] = top_base.groupby("_year")["Qty"].rank(method="first", ascending=False).astype(int)
+        sales_top_sku_by_year = (
+            top_base[top_base["Rank"] <= 5]
+            .rename(columns={"_year": "Year"})
+            .sort_values(["Year", "Rank"])
+            [["Year", "Rank", "Product SKU", "Product Name", "Qty"]]
+        )
+        sales_top_sku_by_year["Year"] = sales_top_sku_by_year["Year"].astype(int)
+
+    return grouped, sales_year_summary, sales_location_summary, sales_year_location_summary, sales_top_sku_by_year, {
         "sales_sku": sku_col,
         "sales_name": name_col,
         "sales_qty": qty_col,
@@ -894,7 +909,7 @@ def build_analysis(
         purchase_file, purchase_filter_keyword, purchase_years, location_filter
     )
 
-    sales, sales_year_summary, sales_location_summary, sales_year_location_summary, sales_cols = aggregate_sales(
+    sales, sales_year_summary, sales_location_summary, sales_year_location_summary, sales_top_sku_by_year, sales_cols = aggregate_sales(
         sales_df,
         purchase_filter_keyword,
         manual_year_mode=bool(sales_years),
@@ -1005,6 +1020,8 @@ def build_analysis(
         insights["sales_location_summary"] = sales_location_summary
     if sales_year_summary is not None:
         insights["sales_year_summary"] = sales_year_summary
+    if sales_top_sku_by_year is not None:
+        insights["sales_top_sku_by_year"] = sales_top_sku_by_year
     if sales_purchase_year_summary is not None:
         insights["sales_purchase_year_summary"] = sales_purchase_year_summary
     if sales_year_location_summary is not None:
@@ -1023,6 +1040,7 @@ def build_analysis(
         sales_purchase_year_summary,
         sales_location_summary,
         sales_year_location_summary,
+        sales_top_sku_by_year,
         stock_location_summary,
         purchase_summary,
         purchase_sku_summary,
@@ -1261,11 +1279,14 @@ def generate_excel(result: AnalysisResult) -> bytes:
         ("SABC x Inventory Status Matrix", result.matrix.reset_index(), "SABCMatrixTable", []),
     ]
     if result.location_year_business_view is not None and not result.location_year_business_view.empty:
-        sheets.append(("2026 Inventory View", result.location_year_business_view, "InventoryViewTable", []))
+        latest_year = int(pd.to_numeric(result.location_year_business_view["Year"], errors="coerce").max())
+        sheets.append((f"{latest_year} Inventory View", result.location_year_business_view, "InventoryViewTable", []))
     if result.sales_purchase_year_summary is not None and not result.sales_purchase_year_summary.empty:
         sheets.append(("Sales PO Year Compare", result.sales_purchase_year_summary, "SalesPOYearCompareTable", []))
     if result.sales_year_summary is not None and not result.sales_year_summary.empty:
         sheets.append(("Sales Summary by Year", result.sales_year_summary, "SalesSummaryByYearTable", []))
+    if result.sales_top_sku_by_year is not None and not result.sales_top_sku_by_year.empty:
+        sheets.append(("Top SKU by Year", result.sales_top_sku_by_year, "TopSKUByYearTable", []))
     if result.purchase_summary is not None:
         if result.purchase_sku_summary is not None and not result.purchase_sku_summary.empty:
             sheets.append(("Purchase by SKU", result.purchase_sku_summary, "PurchaseBySKUTable", []))
@@ -1501,15 +1522,26 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
 
     insights = result.insights
     has_catalogue = bool(insights.get("catalogue_present"))
+    current_year = result.detected_columns.get("current_analysis_sales_year", "latest uploaded year")
     doc.add_heading("Executive Summary", level=1)
-    add_bullet(doc, f"Analyzed {insights['total_skus']:,} SKUs with {insights['total_qty']:,.0f} units sold in the uploaded sales period.")
-    add_bullet(doc, f"Top SKU: {insights['top_sku']} - {insights['top_product']} ({insights['top_qty']:,.0f} units, {insights['top_share']:.1%} of sales).")
+    add_bullet(doc, f"Current analysis uses {current_year} sales against the latest stock snapshot: {insights['total_skus']:,} SKUs with {insights['total_qty']:,.0f} units sold.")
+    add_bullet(doc, f"Top {current_year} SKU: {insights['top_sku']} - {insights['top_product']} ({insights['top_qty']:,.0f} units, {insights['top_share']:.1%} of {current_year} sales).")
     add_bullet(
         doc,
         f"S/A core SKUs represent {insights['core_sku_count']:,} SKUs and {insights['core_qty_share']:.1%} of quantity sold. "
         "These items should be treated as the commercial priority group: protect availability, review PO timing first, and use them as the anchor products for channel growth."
     )
     add_bullet(doc, f"{insights['urgent_count']:,} SKUs need immediate replenishment attention; {insights['overstock_count']:,} SKUs show overstock risk.")
+    if result.sales_purchase_year_summary is not None and not result.sales_purchase_year_summary.empty:
+        trend = result.sales_purchase_year_summary.sort_values("Year")
+        first = trend.iloc[0]
+        last = trend.iloc[-1]
+        add_bullet(
+            doc,
+            f"Trend from {int(first['Year'])} to {int(last['Year'])}: SKU count changed from {first.get('SKU Count', 0):,.0f} to {last.get('SKU Count', 0):,.0f}, "
+            f"Sales Qty changed from {first.get('Sales Qty', 0):,.0f} to {last.get('Sales Qty', 0):,.0f}, and PO Cost / Sales Qty moved from "
+            f"{first.get(COST_PER_UNIT_COL, np.nan):,.2f} to {last.get(COST_PER_UNIT_COL, np.nan):,.2f}."
+        )
     if has_catalogue and "priced_sku_count" in insights:
         add_bullet(
             doc,
@@ -1528,9 +1560,14 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
             f"{insights.get('renewal_count', 0):,} renewal items."
         )
 
-    doc.add_heading("Top 5 SKUs by Sales Qty", level=2)
+    doc.add_heading(f"Top 5 SKUs by {current_year} Sales Qty", level=2)
     top_cols = ["Product SKU", "Product Name", "Qty", "Contribution %", "Cumulative %", "SABC Type", "Coverage", "Inventory Status", "Action"]
     add_table(doc, insights["top_sku_table"][top_cols], max_rows=5)
+    if result.sales_top_sku_by_year is not None and not result.sales_top_sku_by_year.empty:
+        for year in sorted(result.sales_top_sku_by_year["Year"].dropna().unique()):
+            doc.add_heading(f"Top 5 SKUs - {int(year)}", level=2)
+            yearly_top = result.sales_top_sku_by_year[result.sales_top_sku_by_year["Year"] == year]
+            add_table(doc, yearly_top, max_rows=5)
 
     doc.add_heading("Data Sources", level=1)
     add_key_value_paragraph(doc, "Sales Report", "SKU-level quantity sold, product name, and month/year when available.")
@@ -1547,7 +1584,7 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     doc.add_heading("Excel Column Explanation", level=1)
     explanation = pd.DataFrame(
         [
-            ["Qty", "Total SKU quantity sold in the uploaded sales period"],
+            ["Qty", f"Total SKU quantity sold in the current analysis period ({current_year} when year-labeled sales files are uploaded)"],
             ["Contribution %", "SKU Qty / Total Qty"],
             ["Cumulative %", "Running contribution after sorting by Qty"],
             ["SABC Type", "S <= 5%, A <= 80%, B <= 95%, C > 95%"],
@@ -1569,8 +1606,8 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     )
     add_table(doc, explanation, max_rows=20)
 
-    doc.add_heading("SABC Sales Analysis", level=1)
-    doc.add_paragraph("The SABC view separates high-impact SKUs from long-tail products, so replenishment can protect sales while keeping slow movers controlled.")
+    doc.add_heading(f"SABC Sales Analysis ({current_year})", level=1)
+    doc.add_paragraph(f"The SABC view uses {current_year} sales only, so replenishment can protect current winners while keeping slow movers controlled.")
     add_table(doc, result.sabc_summary, max_rows=10)
     sabc_png = make_sabc_chart_png(result.sabc_summary)
     doc.add_picture(sabc_png, width=Inches(6.5))
@@ -1586,8 +1623,8 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
         doc.add_heading("Sales Trend by Year", level=1)
         add_table(doc, result.sales_year_summary, max_rows=10)
 
-    doc.add_heading("Inventory Coverage Analysis", level=1)
-    doc.add_paragraph("Coverage translates stock into months of demand. Low coverage creates service risk; excessive coverage creates cash and warehouse pressure.")
+    doc.add_heading(f"Inventory Coverage Analysis ({current_year} Sales + Current Stock)", level=1)
+    doc.add_paragraph(f"Coverage translates current stock into months of demand using {current_year} sales. Low coverage creates service risk; excessive coverage creates cash and warehouse pressure.")
     add_table(doc, result.inventory_status_summary, max_rows=10)
     status_png = make_bar_chart_png(result.inventory_status_summary, "Inventory Status", "SKU_Count", "Inventory Status by SKU Count")
     doc.add_picture(status_png, width=Inches(6.5))
@@ -1627,11 +1664,11 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     if has_catalogue:
         add_catalogue_report_sections(doc, insights)
 
-    doc.add_heading("Replenishment Priority", level=1)
+    doc.add_heading(f"Replenishment Priority ({current_year})", level=1)
     priority_cols = ["Product SKU", "Product Name", "Qty", "SABC Type", "Adjusted Future Inventory", "Coverage", "Inventory Status", "Action"]
     add_table(doc, insights["urgent_table"][priority_cols], max_rows=10)
 
-    doc.add_heading("Overstock Risk", level=1)
+    doc.add_heading(f"Overstock Risk ({current_year})", level=1)
     add_table(doc, insights["overstock_table"][priority_cols], max_rows=10)
 
     doc.add_heading("Future 6-Month Business Plan", level=1)

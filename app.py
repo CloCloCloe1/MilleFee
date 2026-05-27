@@ -351,6 +351,15 @@ def clean_brand_name(value: str) -> str:
     return cleaned or "Brand"
 
 
+def clean_filename_part(value: str) -> str:
+    cleaned = "".join(ch for ch in value.strip() if ch.isalnum())
+    return cleaned or "AllLocations"
+
+
+def output_file_stem(brand_name: str, location_filter: str) -> str:
+    return f"{clean_filename_part(clean_brand_name(brand_name))}_{clean_filename_part(location_filter)}"
+
+
 def show_column_notes(language: str, table_key: str):
     notes = EXPLANATIONS[language][table_key]
     title = TEXT[language]["column_notes"]
@@ -601,11 +610,11 @@ def bp_generator_page(t: dict, language: str):
         st.dataframe(location_year_view, use_container_width=True, hide_index=True)
 
     download_cols = st.columns(2)
-    output_brand = clean_brand_name(brand_name)
+    output_stem = output_file_stem(brand_name, location_filter)
     with download_cols[0]:
-        st.download_button(t["download_excel"], data=st.session_state["excel_bytes"], file_name=f"{output_brand} BP Data.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+        st.download_button(t["download_excel"], data=st.session_state["excel_bytes"], file_name=f"{output_stem}_BP_Data.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     with download_cols[1]:
-        st.download_button(t["download_word"], data=st.session_state["word_bytes"], file_name=f"{output_brand} Business Analysis.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+        st.download_button(t["download_word"], data=st.session_state["word_bytes"], file_name=f"{output_stem}_Business_Analysis.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
 
     tab1, tab2, tab3, tab4 = st.tabs([t["tab_final"], t["tab_summaries"], t["tab_priority"], t["tab_detected"]])
     with tab1:
