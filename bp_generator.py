@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import re
 import tempfile
+from copy import copy
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -18,6 +19,7 @@ from docx.enum.table import WD_ALIGN_VERTICAL
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
 from openpyxl import Workbook
+from openpyxl import load_workbook
 from openpyxl.chart import LineChart, Reference
 from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -123,6 +125,16 @@ def drop_all_empty_columns(df: pd.DataFrame, columns: Iterable[str]) -> pd.DataF
         if col in out.columns and pd.to_numeric(out[col], errors="coerce").isna().all():
             out = out.drop(columns=[col])
     return out
+
+
+def materialize_excel_source(file: str | Path | BinaryIO | BytesIO):
+    if isinstance(file, (str, Path)):
+        return file, file
+    if hasattr(file, "getvalue"):
+        data = file.getvalue()
+    else:
+        data = file.read()
+    return BytesIO(data), BytesIO(data)
 
 
 def first_existing_column(columns: Iterable[str], aliases: Iterable[str]) -> str | None:
@@ -2010,7 +2022,8 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
 def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO | None, result: AnalysisResult) -> bytes | None:
     if catalogue_file is None:
         return None
-    catalogue_df = read_excel_with_detected_header(catalogue_file)
+    pandas_source, workbook_source = materialize_excel_source(catalogue_file)
+    catalogue_df = read_excel_with_detected_header(pandas_source)
     sku_col = detect_column(catalogue_df, ["Product SKU", "SKU", "JAN", "Barcode", "Product Code", "Product Code Product Code", "Code"], label="Catalogue SKU")
     enriched = catalogue_df.copy()
     enriched["_match_sku"] = enriched[sku_col].map(normalize_sku)
@@ -2092,13 +2105,63 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
     original_cols = [col for col in catalogue_df.columns if col in enriched.columns]
     appended_cols = [col for col in ordered_new_cols if col in enriched.columns]
     other_cols = [col for col in enriched.columns if col not in original_cols + appended_cols + ["_match_sku"]]
-    enriched = enriched[original_cols + appended_cols + other_cols]
-    enriched = drop_all_empty_columns(enriched, [col for col in enriched.columns if "Sales Amount" in str(col)])
+    append_data = enriched[["_match_sku"] + appended_cols + other_cols]
+    append_data = drop_all_empty_columns(append_data, [col for col in append_data.columns if "Sales Amount" in str(col)])
+    append_cols = [col for col in append_data.columns if col != "_match_sku"]
 
-    wb = Workbook()
+    wb = load_workbook(workbook_source)
     ws = wb.active
-    ws.title = "Updated Catalogue"
-    write_df(ws, enriched, "UpdatedCatalogueTable", [col for col in enriched.columns if "Margin %" in str(col)])
+    header_row = None
+    sku_col_idx = None
+    sku_aliases = ["Product SKU", "SKU", "JAN", "Barcode", "Product Code", "Product Code Product Code", "Code"]
+    sku_aliases_norm = {normalize_header(alias) for alias in sku_aliases}
+    for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 30)):
+        for cell in row:
+            if normalize_header(cell.value) in sku_aliases_norm:
+                header_row = cell.row
+                sku_col_idx = cell.column
+                break
+        if header_row:
+            break
+    if header_row is None or sku_col_idx is None:
+        raise ValueError("Could not find a SKU/JAN/Product Code column in the catalogue workbook.")
+
+    value_lookup = append_data.set_index("_match_sku")[append_cols].to_dict(orient="index")
+    start_col = ws.max_column + 1
+    header_style_source = ws.cell(header_row, ws.max_column)
+    subheader_row = header_row + 1
+    has_subheader = any(ws.cell(subheader_row, col).value not in (None, "") for col in range(1, ws.max_column + 1)) if subheader_row <= ws.max_row else False
+    for offset, col_name in enumerate(append_cols):
+        cell = ws.cell(header_row, start_col + offset, col_name)
+        if header_style_source.has_style:
+            cell._style = copy(header_style_source._style)
+        cell.font = copy(header_style_source.font)
+        cell.fill = copy(header_style_source.fill)
+        cell.border = copy(header_style_source.border)
+        cell.alignment = copy(header_style_source.alignment)
+        if has_subheader:
+            ws.cell(subheader_row, start_col + offset, "")
+        ws.column_dimensions[get_column_letter(start_col + offset)].width = min(max(len(str(col_name)) + 2, 14), 24)
+
+    for row_idx in range(header_row + 1, ws.max_row + 1):
+        sku = normalize_sku(ws.cell(row_idx, sku_col_idx).value)
+        if not sku or sku not in value_lookup:
+            continue
+        for offset, col_name in enumerate(append_cols):
+            value = value_lookup[sku].get(col_name, np.nan)
+            if pd.isna(value):
+                value = None
+            cell = ws.cell(row_idx, start_col + offset, value)
+            style_source = ws.cell(row_idx, start_col - 1)
+            if style_source.has_style:
+                cell._style = copy(style_source._style)
+            if "Margin %" in str(col_name):
+                cell.number_format = "0.0%"
+            elif "($ CAD)" in str(col_name) or "PO Cost" in str(col_name):
+                cell.number_format = "$#,##0.00"
+            elif isinstance(value, (int, float)):
+                cell.number_format = "#,##0.00" if any(token in str(col_name) for token in ["Coverage", "Avg Monthly Sales"]) else "#,##0"
+
     bio = BytesIO()
     wb.save(bio)
     return bio.getvalue()
