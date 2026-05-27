@@ -1832,8 +1832,8 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
         [
             ["Qty", f"Total SKU quantity sold in the current analysis period ({current_year} when year-labeled sales files are uploaded)"],
             [SALES_AMOUNT_COL, "Sales revenue from the Sales report when the uploaded file includes an amount column"],
-            [PROFIT_COL, "Profit from the Sales report; if Sales Amount exists but Profit is not exported, yearly/location views can estimate it as Sales Amount - PO Cost"],
-            [SALES_MARGIN_COL, "Profit / Sales Amount. If only a margin column is uploaded, it is used as the sales margin indicator."],
+            [PROFIT_COL, "Profit from the Sales report. Higher is usually better."],
+            [SALES_MARGIN_COL, "Profit / Sales Amount. If only a margin column is uploaded, it is used as the sales margin indicator. Higher is usually better."],
             ["Contribution %", "SKU Qty / Total Qty"],
             ["Cumulative %", "Running contribution after sorting by Qty"],
             ["SABC Type", "S <= 5%, A <= 80%, B <= 95%, C > 95%"],
@@ -1914,7 +1914,8 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     ):
         doc.add_heading(f"Profitability Analysis ({current_year})", level=2)
         doc.add_paragraph(
-            f"This view adds profit and sales margin to the {current_year} SKU analysis, so high-volume products can be separated from high-profit products."
+            f"This view adds profit and sales margin to the {current_year} SKU analysis, so high-volume products can be separated from high-profit products. "
+            f"Top Profit SKUs and Low Sales Margin Review use {current_year} sales only, matched to the current inventory analysis period."
         )
         avg_sales_margin = insights.get("avg_sales_margin", np.nan)
         if pd.notna(avg_sales_margin):
