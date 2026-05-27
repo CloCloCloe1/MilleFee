@@ -57,7 +57,6 @@ TEXT = {
         "replenishment": "Replenishment Priority",
         "overstock_risk": "Overstock Risk",
         "auto_detected": "Auto-detected Columns",
-        "purchase_summary": "Purchase Summary",
         "sales_year_summary": "Sales Summary by Year",
         "sales_purchase_year_summary": "Sales vs PO by Year",
         "purchase_sku_summary": "Purchase by SKU",
@@ -132,7 +131,6 @@ TEXT = {
         "replenishment": "\u8865\u8d27\u4f18\u5148\u7ea7",
         "overstock_risk": "\u5e93\u5b58\u8fc7\u9ad8\u98ce\u9669",
         "auto_detected": "\u81ea\u52a8\u8bc6\u522b\u7684\u5217\u540d",
-        "purchase_summary": "\u91c7\u8d2d\u91d1\u989d\u6c47\u603b",
         "sales_year_summary": "\u6309\u5e74\u4efd\u6c47\u603b\u9500\u552e",
         "sales_purchase_year_summary": "\u6309\u5e74\u4efd\u5bf9\u6bd4 Sales vs PO",
         "purchase_sku_summary": "\u6309 SKU \u6c47\u603b\u91c7\u8d2d\u91d1\u989d",
@@ -185,10 +183,10 @@ EXPLANATIONS = {
             "Coverage": "Adjusted Future Inventory divided by Avg Monthly Sales. It estimates how many months current/future stock can support.",
             "Inventory Status": "Stock health label based on coverage.",
             "Action": "Suggested business action based on Inventory Status.",
-            "2024 Purchase Amount": "PO line purchase amount matched to this SKU for the 2024 uploaded PO file.",
-            "2025 Purchase Amount": "PO line purchase amount matched to this SKU for the 2025 uploaded PO file.",
-            "2026 Purchase Amount": "PO line purchase amount matched to this SKU for the 2026 YTD uploaded PO file.",
-            "Total Purchase Amount": "Combined purchase amount from 2024, 2025, and 2026 uploaded PO files.",
+            "2024 PO Cost ($ CAD)": "PO line cost matched to this SKU for the 2024 uploaded PO file.",
+            "2025 PO Cost ($ CAD)": "PO line cost matched to this SKU for the 2025 uploaded PO file.",
+            "2026 PO Cost ($ CAD)": "PO line cost matched to this SKU for the 2026 YTD uploaded PO file.",
+            "Total PO Cost ($ CAD)": "Combined PO cost from 2024, 2025, and 2026 uploaded PO files.",
         },
         "SABC Summary": {
             "SABC Type": "Sales priority class generated from cumulative sales contribution.",
@@ -223,51 +221,48 @@ EXPLANATIONS = {
             "Action": "Recommended next business action.",
         },
         "Detected Columns": {"Field": "Internal field needed by the app.", "Detected Column": "Column name automatically matched from the uploaded Excel file."},
-        "Purchase Summary": {
-            "Year": "Calendar year being summarized.",
-            "Period": "Full year or year-to-date period.",
-            "Purchase Amount": "Total purchase amount from the uploaded Purchase / PO History file.",
-            "Record Count": "Number of purchase records included in that year.",
-        },
         "Sales Summary by Year": {
             "Year": "Year assigned by the upload slot, or detected from the sales date when using a single sales file.",
             "SKU Count": "Number of SKUs sold in that year.",
             "Sales Qty": "Total sales quantity for the uploaded sales file assigned to that year.",
-            "Sales Amount": "Sales amount for that year when the sales report includes an amount column.",
+            "Sales Amount ($ CAD)": "Sales revenue amount for that year when the sales report includes an amount column.",
+            "Profit ($ CAD)": "Profit from the sales report for that year when available.",
         },
         "Sales vs PO by Year": {
             "Year": "Year used to connect the sales file and PO file.",
             "Sales Qty": "Sales quantity from the uploaded sales file for that year.",
-            "Purchase Amount": "PO purchase amount from the uploaded PO file for that year.",
-            "Purchase Amount / Sales Qty": "Purchase investment divided by units sold. Useful for trend comparison when sales amount is unavailable.",
-            "Purchase / Sales Amount": "Purchase amount divided by sales amount when sales amount is available.",
+            "Sales Amount ($ CAD)": "Sales revenue from the sales report for that year when available.",
+            "Profit ($ CAD)": "Profit from the sales report for that year when available.",
+            "PO Cost ($ CAD)": "Total PO line cost for that year after brand and location filters. This is the purchasing/inbound cost, not sales revenue.",
+            "PO Cost / Sales Qty ($ CAD)": "PO cost divided by units sold. Lower is usually better because less purchasing cost was needed per unit sold, but read it together with current stock and replenishment needs.",
+            "PO Cost / Sales Amount": "PO cost divided by sales revenue when sales amount is available. Lower usually means better sales efficiency versus purchase cost.",
         },
         "Purchase by SKU": {
             "SKU": "SKU detected from PO line file.",
             "Product": "Product name detected from PO line file.",
-            "Purchase Amount": "Total purchase amount after applying the purchase keyword filter.",
-            "Record Count": "Number of PO lines included.",
+            "PO Cost ($ CAD)": "Total PO line cost after applying the brand and location filters.",
             "Quantity": "Total purchased quantity when available.",
         },
         "Purchase by Location": {
             "Location": "Receiving or stock location from the PO file.",
-            "Purchase Amount": "Total purchase amount by location after applying the purchase keyword filter.",
-            "Record Count": "Number of PO lines included for this location.",
-            "2024/2025/2026 Purchase Amount": "Purchase amount by uploaded PO year for this location.",
+            "PO Cost ($ CAD)": "Total PO line cost by location after applying the brand keyword filter.",
+            "2024/2025/2026 PO Cost ($ CAD)": "PO cost by uploaded PO year for this location.",
         },
         "Year Location View": {
             "Year": "Uploaded or detected calendar year.",
             "Location": "Location detected from Sales, Stock, or PO files.",
             "Sales Qty": "Sales quantity in this year and location when Sales Report includes date and location.",
-            "Sales Amount": "Sales amount in this year and location when a sales amount column is available.",
-            "Purchase Amount": "PO purchase amount in this year and location after applying the brand keyword filter.",
+            "Sales Amount ($ CAD)": "Sales revenue in this year and location when a sales amount column is available.",
+            "Profit ($ CAD)": "Profit in this year and location when available.",
+            "PO Cost ($ CAD)": "PO cost in this year and location after applying the brand keyword filter.",
             "Available / Incoming / On Hand / Future Inventory": "Current stock values by location. Stock is current, not historical by year.",
         },
         "Sales by Location": {
             "Location": "Sales location detected from the Sales Report.",
             "SKU Count": "Number of selling SKUs in this location.",
             "Qty": "Sales quantity in this location from the uploaded sales period.",
-            "Sales Amount": "Sales amount in this location from the uploaded sales period when available.",
+            "Sales Amount ($ CAD)": "Sales revenue in this location from the uploaded sales period when available.",
+            "Profit ($ CAD)": "Profit in this location from the uploaded sales period when available.",
         },
         "Stock by Location": {
             "Location": "Stock or warehouse location detected from the Stock Levels Report.",
@@ -293,10 +288,10 @@ EXPLANATIONS = {
             "Coverage": "Adjusted Future Inventory / Avg Monthly Sales\uff0c\u8868\u793a\u5e93\u5b58\u5927\u7ea6\u8fd8\u80fd\u652f\u6301\u51e0\u4e2a\u6708\u9500\u552e\u3002",
             "Inventory Status": "\u6839\u636e\u9500\u91cf\u548c coverage \u5224\u65ad\u5e93\u5b58\u72b6\u6001\u3002",
             "Action": "\u6839\u636e\u5e93\u5b58\u72b6\u6001\u81ea\u52a8\u7ed9\u51fa\u7684\u4e1a\u52a1\u5efa\u8bae\u3002",
-            "2024 Purchase Amount": "\u6309 SKU \u5339\u914d\u5230\u8be5\u4ea7\u54c1\u7684 2024 PO line \u91c7\u8d2d\u91d1\u989d\u3002",
-            "2025 Purchase Amount": "\u6309 SKU \u5339\u914d\u5230\u8be5\u4ea7\u54c1\u7684 2025 PO line \u91c7\u8d2d\u91d1\u989d\u3002",
-            "2026 Purchase Amount": "\u6309 SKU \u5339\u914d\u5230\u8be5\u4ea7\u54c1\u7684 2026 YTD PO line \u91c7\u8d2d\u91d1\u989d\u3002",
-            "Total Purchase Amount": "2024\u30012025\u30012026 \u4e09\u4e2a PO \u6587\u4ef6\u5339\u914d\u5230\u8be5 SKU \u7684\u91c7\u8d2d\u91d1\u989d\u5408\u8ba1\u3002",
+            "2024 PO Cost ($ CAD)": "\u6309 SKU \u5339\u914d\u5230\u8be5\u4ea7\u54c1\u7684 2024 PO line \u8fdb\u8d27\u6210\u672c\u3002",
+            "2025 PO Cost ($ CAD)": "\u6309 SKU \u5339\u914d\u5230\u8be5\u4ea7\u54c1\u7684 2025 PO line \u8fdb\u8d27\u6210\u672c\u3002",
+            "2026 PO Cost ($ CAD)": "\u6309 SKU \u5339\u914d\u5230\u8be5\u4ea7\u54c1\u7684 2026 YTD PO line \u8fdb\u8d27\u6210\u672c\u3002",
+            "Total PO Cost ($ CAD)": "2024\u30012025\u30012026 \u4e09\u4e2a PO \u6587\u4ef6\u5339\u914d\u5230\u8be5 SKU \u7684\u8fdb\u8d27\u6210\u672c\u5408\u8ba1\u3002",
         },
         "SABC Summary": {
             "SABC Type": "\u6839\u636e\u7d2f\u8ba1\u9500\u552e\u8d21\u732e\u5f97\u5230\u7684\u9500\u552e\u4f18\u5148\u7ea7\u3002",
@@ -331,51 +326,48 @@ EXPLANATIONS = {
             "Action": "\u5efa\u8bae\u4e0b\u4e00\u6b65\u4e1a\u52a1\u52a8\u4f5c\u3002",
         },
         "Detected Columns": {"Field": "\u7cfb\u7edf\u5185\u90e8\u9700\u8981\u8bc6\u522b\u7684\u5b57\u6bb5\u3002", "Detected Column": "\u4ece\u4e0a\u4f20 Excel \u4e2d\u81ea\u52a8\u5339\u914d\u5230\u7684\u5217\u540d\u3002"},
-        "Purchase Summary": {
-            "Year": "\u6c47\u603b\u7684\u81ea\u7136\u5e74\u3002",
-            "Period": "\u5168\u5e74\u6216\u5e74\u521d\u81f3\u4eca\u533a\u95f4\u3002",
-            "Purchase Amount": "\u4ece\u91c7\u8d2d / PO \u5386\u53f2\u6587\u4ef6\u4e2d\u6c47\u603b\u7684\u91c7\u8d2d\u91d1\u989d\u3002",
-            "Record Count": "\u8be5\u5e74\u5ea6\u5305\u542b\u7684\u91c7\u8d2d\u8bb0\u5f55\u6570\u3002",
-        },
         "Sales Summary by Year": {
             "Year": "\u4e0a\u4f20\u65f6\u6807\u8bb0\u7684\u5e74\u4efd\uff0c\u6216\u5355\u4e2a sales \u6587\u4ef6\u4e2d\u4ece\u65e5\u671f\u8bc6\u522b\u7684\u5e74\u4efd\u3002",
             "SKU Count": "\u8be5\u5e74\u6709\u9500\u552e\u7684 SKU \u6570\u91cf\u3002",
             "Sales Qty": "\u8be5\u5e74\u4efd sales file \u4e2d\u7684\u9500\u552e\u6570\u91cf\u5408\u8ba1\u3002",
-            "Sales Amount": "\u5982 sales report \u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u8be5\u5e74\u9500\u552e\u91d1\u989d\u3002",
+            "Sales Amount ($ CAD)": "\u5982 sales report \u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u8be5\u5e74\u9500\u552e\u989d\u3002",
+            "Profit ($ CAD)": "\u5982 sales report \u6709 profit \u5217\uff0c\u5219\u4e3a\u8be5\u5e74\u5229\u6da6\u3002",
         },
         "Sales vs PO by Year": {
             "Year": "\u7528\u4e8e\u8fde\u63a5 Sales file \u548c PO file \u7684\u5e74\u4efd\u3002",
             "Sales Qty": "\u8be5\u5e74\u4e0a\u4f20 sales file \u4e2d\u7684\u9500\u91cf\u3002",
-            "Purchase Amount": "\u8be5\u5e74\u4e0a\u4f20 PO file \u4e2d\u7684\u91c7\u8d2d\u91d1\u989d\u3002",
-            "Purchase Amount / Sales Qty": "\u91c7\u8d2d\u91d1\u989d / \u9500\u552e\u6570\u91cf\uff0c\u9002\u5408\u6ca1\u6709 sales amount \u65f6\u770b\u8d8b\u52bf\u3002",
-            "Purchase / Sales Amount": "\u5982\u6709\u9500\u552e\u91d1\u989d\uff0c\u5219\u4e3a\u91c7\u8d2d\u91d1\u989d / \u9500\u552e\u91d1\u989d\u3002",
+            "Sales Amount ($ CAD)": "\u5982 sales report \u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u8be5\u5e74\u9500\u552e\u989d\u3002",
+            "Profit ($ CAD)": "\u5982 sales report \u6709 profit \u5217\uff0c\u5219\u4e3a\u8be5\u5e74\u5229\u6da6\u3002",
+            "PO Cost ($ CAD)": "\u8be5\u5e74\u4e0a\u4f20 PO file \u4e2d\uff0c\u7b5b\u9009\u54c1\u724c\u548c location \u540e\u7684 PO line \u8fdb\u8d27\u6210\u672c\u3002",
+            "PO Cost / Sales Qty ($ CAD)": "PO Cost / Sales Qty\uff0c\u8868\u793a\u6bcf\u5356\u51fa 1 \u4ef6\u5bf9\u5e94\u7684\u8fdb\u8d27\u6210\u672c\u5f3a\u5ea6\u3002\u901a\u5e38\u8d8a\u4f4e\u8d8a\u597d\uff0c\u4f46\u8981\u7ed3\u5408\u5f53\u524d\u5e93\u5b58\u548c\u662f\u5426\u9700\u8981\u8865\u8d27\u4e00\u8d77\u770b\u3002",
+            "PO Cost / Sales Amount": "\u5982\u6709\u9500\u552e\u989d\uff0c\u5219\u4e3a PO Cost / Sales Amount\u3002\u901a\u5e38\u8d8a\u4f4e\u4ee3\u8868\u91c7\u8d2d\u6210\u672c\u76f8\u5bf9\u9500\u552e\u989d\u66f4\u6709\u6548\u7387\u3002",
         },
         "Purchase by SKU": {
             "SKU": "\u4ece PO line \u6587\u4ef6\u8bc6\u522b\u5230\u7684 SKU\u3002",
             "Product": "\u4ece PO line \u6587\u4ef6\u8bc6\u522b\u5230\u7684\u4ea7\u54c1\u540d\u79f0\u3002",
-            "Purchase Amount": "\u5957\u7528\u91c7\u8d2d\u5173\u952e\u8bcd\u7b5b\u9009\u540e\u7684\u91c7\u8d2d\u91d1\u989d\u5408\u8ba1\u3002",
-            "Record Count": "\u5305\u542b\u7684 PO lines \u6570\u91cf\u3002",
+            "PO Cost ($ CAD)": "\u5957\u7528\u54c1\u724c\u548c location \u7b5b\u9009\u540e\u7684 PO line \u8fdb\u8d27\u6210\u672c\u5408\u8ba1\u3002",
             "Quantity": "\u5982\u6587\u4ef6\u4e2d\u6709\u6570\u91cf\u5217\uff0c\u5219\u4e3a\u91c7\u8d2d\u6570\u91cf\u5408\u8ba1\u3002",
         },
         "Purchase by Location": {
             "Location": "PO \u6587\u4ef6\u4e2d\u7684\u6536\u8d27 / \u5e93\u5b58 location\u3002",
-            "Purchase Amount": "\u5957\u7528\u54c1\u724c\u5173\u952e\u8bcd\u7b5b\u9009\u540e\uff0c\u8be5 location \u7684\u91c7\u8d2d\u91d1\u989d\u5408\u8ba1\u3002",
-            "Record Count": "\u8be5 location \u5305\u542b\u7684 PO lines \u6570\u91cf\u3002",
-            "2024/2025/2026 Purchase Amount": "\u8be5 location \u6309\u4e0a\u4f20\u5e74\u4efd\u62c6\u5206\u7684\u91c7\u8d2d\u91d1\u989d\u3002",
+            "PO Cost ($ CAD)": "\u5957\u7528\u54c1\u724c\u5173\u952e\u8bcd\u7b5b\u9009\u540e\uff0c\u8be5 location \u7684 PO line \u8fdb\u8d27\u6210\u672c\u5408\u8ba1\u3002",
+            "2024/2025/2026 PO Cost ($ CAD)": "\u8be5 location \u6309\u4e0a\u4f20\u5e74\u4efd\u62c6\u5206\u7684 PO \u8fdb\u8d27\u6210\u672c\u3002",
         },
         "Year Location View": {
             "Year": "\u4e0a\u4f20\u65f6\u6807\u8bb0\u6216\u6587\u4ef6\u4e2d\u8bc6\u522b\u5230\u7684\u81ea\u7136\u5e74\u3002",
             "Location": "\u4ece Sales\u3001Stock \u6216 PO \u6587\u4ef6\u4e2d\u8bc6\u522b\u5230\u7684 location\u3002",
             "Sales Qty": "\u5982 Sales Report \u6709\u65e5\u671f\u548c location\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u9500\u91cf\u3002",
-            "Sales Amount": "\u5982 Sales Report \u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u9500\u552e\u91d1\u989d\u3002",
-            "Purchase Amount": "\u5957\u7528\u54c1\u724c\u5173\u952e\u8bcd\u7b5b\u9009\u540e\uff0c\u8be5\u5e74 + location \u7684 PO \u91c7\u8d2d\u91d1\u989d\u3002",
+            "Sales Amount ($ CAD)": "\u5982 Sales Report \u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u9500\u552e\u989d\u3002",
+            "Profit ($ CAD)": "\u5982 Sales Report \u6709 profit \u5217\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u5229\u6da6\u3002",
+            "PO Cost ($ CAD)": "\u5957\u7528\u54c1\u724c\u5173\u952e\u8bcd\u7b5b\u9009\u540e\uff0c\u8be5\u5e74 + location \u7684 PO \u8fdb\u8d27\u6210\u672c\u3002",
             "Available / Incoming / On Hand / Future Inventory": "\u8be5 location \u7684\u5f53\u524d\u5e93\u5b58\u3002\u6ce8\u610f\uff1aStock \u662f\u5f53\u524d\u5e93\u5b58\uff0c\u4e0d\u662f\u5386\u53f2\u5e74\u5ea6\u5e93\u5b58\u3002",
         },
         "Sales by Location": {
             "Location": "Sales Report \u4e2d\u8bc6\u522b\u5230\u7684\u9500\u552e location\u3002",
             "SKU Count": "\u8be5 location \u6709\u9500\u552e\u7684 SKU \u6570\u91cf\u3002",
             "Qty": "\u4e0a\u4f20 sales \u533a\u95f4\u5185\uff0c\u8be5 location \u7684\u9500\u91cf\u3002",
-            "Sales Amount": "\u5982\u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u4e0a\u4f20 sales \u533a\u95f4\u5185\u8be5 location \u7684\u9500\u552e\u91d1\u989d\u3002",
+            "Sales Amount ($ CAD)": "\u5982\u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u4e0a\u4f20 sales \u533a\u95f4\u5185\u8be5 location \u7684\u9500\u552e\u989d\u3002",
+            "Profit ($ CAD)": "\u5982\u6709 profit \u5217\uff0c\u5219\u4e3a\u4e0a\u4f20 sales \u533a\u95f4\u5185\u8be5 location \u7684\u5229\u6da6\u3002",
         },
         "Stock by Location": {
             "Location": "Stock Levels Report \u4e2d\u8bc6\u522b\u5230\u7684\u5e93\u5b58 / \u4ed3\u5e93 location\u3002",
@@ -413,6 +405,45 @@ def show_column_notes(language: str, table_key: str):
         else:
             rows = [{"Column": key, "Explanation": value} for key, value in notes.items()]
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+
+def show_sales_po_insights(language: str, df: pd.DataFrame):
+    with st.expander("Insight / \u5206\u6790\u6d1e\u5bdf", expanded=False):
+        if df.empty:
+            return
+        work = df.sort_values("Year").copy()
+        lines = []
+        if len(work) >= 2:
+            first = work.iloc[0]
+            last = work.iloc[-1]
+            sku_change = last.get("SKU Count", 0) - first.get("SKU Count", 0)
+            qty_change = last.get("Sales Qty", 0) - first.get("Sales Qty", 0)
+            if language == ZH:
+                lines.append(f"从 {int(first['Year'])} 到 {int(last['Year'])}，SKU 数量变化 {sku_change:+,.0f}，Sales Qty 变化 {qty_change:+,.0f}。")
+            else:
+                lines.append(f"From {int(first['Year'])} to {int(last['Year'])}, SKU count changed by {sku_change:+,.0f} and Sales Qty changed by {qty_change:+,.0f}.")
+        ratio_col = "PO Cost / Sales Qty ($ CAD)"
+        if ratio_col in work.columns and work[ratio_col].notna().any():
+            best = work.loc[work[ratio_col].idxmin()]
+            worst = work.loc[work[ratio_col].idxmax()]
+            if language == ZH:
+                lines.append(f"{int(best['Year'])} 的 PO Cost / Sales Qty 最低，为 {best[ratio_col]:,.2f}，代表每卖出 1 件对应的进货成本强度最低。")
+                lines.append(f"这个数值通常越低越好，但如果当前库存很低，也可能代表后续需要补货。")
+            else:
+                lines.append(f"{int(best['Year'])} has the lowest PO Cost / Sales Qty at {best[ratio_col]:,.2f}, meaning the lowest PO cost intensity per unit sold.")
+                lines.append("Lower is usually better, but if current stock is low it may also indicate a need for replenishment.")
+            if int(best["Year"]) != int(worst["Year"]) and language == ZH:
+                lines.append(f"对比 {int(worst['Year'])}，{int(best['Year'])} 的采购效率更好。")
+            elif int(best["Year"]) != int(worst["Year"]):
+                lines.append(f"Compared with {int(worst['Year'])}, {int(best['Year'])} is more efficient on this metric.")
+        if "Profit ($ CAD)" in work.columns and work["Profit ($ CAD)"].notna().any():
+            top_profit = work.loc[work["Profit ($ CAD)"].idxmax()]
+            if language == ZH:
+                lines.append(f"{int(top_profit['Year'])} 的 Profit 最高，为 ${top_profit['Profit ($ CAD)']:,.2f} CAD。")
+            else:
+                lines.append(f"{int(top_profit['Year'])} has the highest Profit at ${top_profit['Profit ($ CAD)']:,.2f} CAD.")
+        for line in lines:
+            st.write(f"- {line}")
 
 
 def apply_styles():
@@ -581,9 +612,10 @@ def bp_generator_page(t: dict, language: str):
     if result.sales_purchase_year_summary is not None and not result.sales_purchase_year_summary.empty:
         st.subheader(t["sales_purchase_year_summary"])
         show_column_notes(language, "Sales vs PO by Year")
+        show_sales_po_insights(language, result.sales_purchase_year_summary)
         compare_view = result.sales_purchase_year_summary.copy()
-        for col in [c for c in compare_view.columns if "Amount" in c or c == "Purchase / Sales Amount"]:
-            if "Purchase / Sales Amount" == col:
+        for col in [c for c in compare_view.columns if "($ CAD)" in c or c == "PO Cost / Sales Amount"]:
+            if "PO Cost / Sales Amount" == col:
                 compare_view[col] = compare_view[col].map(lambda x: "" if pd.isna(x) else f"{x:.1%}")
             else:
                 compare_view[col] = compare_view[col].map(lambda x: "" if pd.isna(x) else f"{x:,.2f}")
@@ -592,34 +624,30 @@ def bp_generator_page(t: dict, language: str):
         st.subheader(t["sales_year_summary"])
         show_column_notes(language, "Sales Summary by Year")
         sales_year_view = result.sales_year_summary.copy()
-        if "Sales Amount" in sales_year_view:
-            sales_year_view["Sales Amount"] = sales_year_view["Sales Amount"].map(lambda x: f"{x:,.2f}")
+        for col in [c for c in sales_year_view.columns if "($ CAD)" in c]:
+            sales_year_view[col] = sales_year_view[col].map(lambda x: "" if pd.isna(x) else f"{x:,.2f}")
         st.dataframe(sales_year_view, use_container_width=True, hide_index=True)
 
     if result.purchase_summary is not None:
-        st.subheader(t["purchase_summary"])
-        show_column_notes(language, "Purchase Summary")
-        purchase_view = result.purchase_summary.copy()
-        purchase_view["Purchase Amount"] = purchase_view["Purchase Amount"].map(lambda x: f"{x:,.2f}")
-        st.dataframe(purchase_view, use_container_width=True, hide_index=True)
         if result.purchase_sku_summary is not None and not result.purchase_sku_summary.empty:
             st.subheader(t["purchase_sku_summary"])
             show_column_notes(language, "Purchase by SKU")
             sku_view = result.purchase_sku_summary.copy()
-            sku_view["Purchase Amount"] = sku_view["Purchase Amount"].map(lambda x: f"{x:,.2f}")
+            for col in [c for c in sku_view.columns if "($ CAD)" in c]:
+                sku_view[col] = sku_view[col].map(lambda x: f"{x:,.2f}")
             st.dataframe(sku_view, use_container_width=True, hide_index=True)
         if result.purchase_location_summary is not None and not result.purchase_location_summary.empty:
             st.subheader(t["purchase_location_summary"])
             show_column_notes(language, "Purchase by Location")
             location_view = result.purchase_location_summary.copy()
-            for col in [c for c in location_view.columns if "Purchase Amount" in c]:
+            for col in [c for c in location_view.columns if "($ CAD)" in c]:
                 location_view[col] = location_view[col].map(lambda x: f"{x:,.2f}")
             st.dataframe(location_view, use_container_width=True, hide_index=True)
     if result.location_year_business_view is not None and not result.location_year_business_view.empty:
         st.subheader(t["location_year_view"])
         show_column_notes(language, "Year Location View")
         location_year_view = result.location_year_business_view.copy()
-        for col in [c for c in location_year_view.columns if "Amount" in c]:
+        for col in [c for c in location_year_view.columns if "($ CAD)" in c]:
             location_year_view[col] = location_year_view[col].map(lambda x: f"{x:,.2f}")
         st.dataframe(location_year_view, use_container_width=True, hide_index=True)
     loc_cols = st.columns(2)
@@ -628,8 +656,8 @@ def bp_generator_page(t: dict, language: str):
             st.subheader(t["sales_location_summary"])
             show_column_notes(language, "Sales by Location")
             sales_loc_view = result.sales_location_summary.copy()
-            if "Sales Amount" in sales_loc_view:
-                sales_loc_view["Sales Amount"] = sales_loc_view["Sales Amount"].map(lambda x: f"{x:,.2f}")
+            for col in [c for c in sales_loc_view.columns if "($ CAD)" in c]:
+                sales_loc_view[col] = sales_loc_view[col].map(lambda x: "" if pd.isna(x) else f"{x:,.2f}")
             st.dataframe(sales_loc_view, use_container_width=True, hide_index=True)
     with loc_cols[1]:
         if result.stock_location_summary is not None and not result.stock_location_summary.empty:
@@ -654,7 +682,7 @@ def bp_generator_page(t: dict, language: str):
                 view[col] = view[col].map(lambda x: f"{x:.1%}" if pd.notna(x) else "")
         if "Coverage" in view:
             view["Coverage"] = view["Coverage"].map(lambda x: "" if pd.isna(x) else f"{x:,.2f}")
-        for col in ["2024 Purchase Amount", "2025 Purchase Amount", "2026 Purchase Amount", "Total Purchase Amount"]:
+        for col in ["2024 PO Cost ($ CAD)", "2025 PO Cost ($ CAD)", "2026 PO Cost ($ CAD)", "Total PO Cost ($ CAD)"]:
             if col in view:
                 view[col] = view[col].map(lambda x: f"{x:,.2f}" if pd.notna(x) else "")
         st.dataframe(view, use_container_width=True, height=520)

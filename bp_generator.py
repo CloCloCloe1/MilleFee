@@ -34,6 +34,12 @@ YELLOW = "F2A900"
 RED = "D92D20"
 GRAY = "F5F5F7"
 MID_GRAY = "86868B"
+PO_COST_COL = "PO Cost ($ CAD)"
+SALES_AMOUNT_COL = "Sales Amount ($ CAD)"
+PROFIT_COL = "Profit ($ CAD)"
+COST_PER_UNIT_COL = "PO Cost / Sales Qty ($ CAD)"
+PO_SALES_RATIO_COL = "PO Cost / Sales Amount"
+TOTAL_PO_COST_COL = "Total PO Cost ($ CAD)"
 
 
 @dataclass
@@ -281,6 +287,7 @@ def aggregate_sales(
     date_col = detect_column(sales_df, ["Month, Year", "Month/Year", "Month Year", "Date", "Order Date"], required=False)
     location_col = detect_column(sales_df, ["Location", "Warehouse", "Store", "Branch", "Sales Location", "Stock Location", "Outlet"], required=False)
     amount_col = detect_column(sales_df, ["Total without taxes", "Net Sales", "Sales Amount", "Amount", "Revenue", "Total with taxes", "Total"], required=False)
+    profit_col = detect_column(sales_df, ["Profit", "Gross Profit", "Net Profit"], required=False)
     barcode_col = detect_column(sales_df, ["Barcode", "JAN", "UPC", "EAN"], required=False)
     brand_col = detect_column(sales_df, ["Brand", "Supplier", "Vendor"], required=False)
 
@@ -314,7 +321,10 @@ def aggregate_sales(
         aggregations = {"SKU Count": ("_sku", "nunique"), "Sales Qty": ("_qty", "sum")}
         if amount_col:
             annual["_sales_amount"] = pd.to_numeric(annual[amount_col], errors="coerce").fillna(0)
-            aggregations["Sales Amount"] = ("_sales_amount", "sum")
+            aggregations[SALES_AMOUNT_COL] = ("_sales_amount", "sum")
+        if profit_col:
+            annual["_profit"] = pd.to_numeric(annual[profit_col], errors="coerce").fillna(0)
+            aggregations[PROFIT_COL] = ("_profit", "sum")
         sales_year_summary = (
             annual.groupby("_year", dropna=False)
             .agg(**aggregations)
@@ -323,6 +333,10 @@ def aggregate_sales(
             .sort_values("Year")
         )
         sales_year_summary["Year"] = sales_year_summary["Year"].astype(int)
+        if SALES_AMOUNT_COL not in sales_year_summary.columns:
+            sales_year_summary[SALES_AMOUNT_COL] = np.nan
+        if PROFIT_COL not in sales_year_summary.columns:
+            sales_year_summary[PROFIT_COL] = np.nan
 
     sales_location_summary = None
     if location_col or manual_location:
@@ -331,7 +345,10 @@ def aggregate_sales(
         aggregations = {"SKU Count": ("_sku", "nunique"), "Qty": ("_qty", "sum")}
         if amount_col:
             loc["_sales_amount"] = pd.to_numeric(loc[amount_col], errors="coerce").fillna(0)
-            aggregations["Sales Amount"] = ("_sales_amount", "sum")
+            aggregations[SALES_AMOUNT_COL] = ("_sales_amount", "sum")
+        if profit_col:
+            loc["_profit"] = pd.to_numeric(loc[profit_col], errors="coerce").fillna(0)
+            aggregations[PROFIT_COL] = ("_profit", "sum")
         sales_location_summary = (
             loc.groupby("_location", dropna=False)
             .agg(**aggregations)
@@ -339,6 +356,10 @@ def aggregate_sales(
             .rename(columns={"_location": "Location"})
             .sort_values("Qty", ascending=False)
         )
+        if SALES_AMOUNT_COL not in sales_location_summary.columns:
+            sales_location_summary[SALES_AMOUNT_COL] = np.nan
+        if PROFIT_COL not in sales_location_summary.columns:
+            sales_location_summary[PROFIT_COL] = np.nan
 
     sales_year_location_summary = None
     if annual is not None and (location_col or manual_location):
@@ -348,7 +369,11 @@ def aggregate_sales(
         if amount_col:
             if "_sales_amount" not in annual.columns:
                 annual["_sales_amount"] = pd.to_numeric(annual[amount_col], errors="coerce").fillna(0)
-            aggregations["Sales Amount"] = ("_sales_amount", "sum")
+            aggregations[SALES_AMOUNT_COL] = ("_sales_amount", "sum")
+        if profit_col:
+            if "_profit" not in annual.columns:
+                annual["_profit"] = pd.to_numeric(annual[profit_col], errors="coerce").fillna(0)
+            aggregations[PROFIT_COL] = ("_profit", "sum")
         sales_year_location_summary = (
             annual.groupby(["_year", "_location"], dropna=False)
             .agg(**aggregations)
@@ -357,6 +382,10 @@ def aggregate_sales(
             .sort_values(["Year", "Sales Qty"], ascending=[False, False])
         )
         sales_year_location_summary["Year"] = sales_year_location_summary["Year"].astype(int)
+        if SALES_AMOUNT_COL not in sales_year_location_summary.columns:
+            sales_year_location_summary[SALES_AMOUNT_COL] = np.nan
+        if PROFIT_COL not in sales_year_location_summary.columns:
+            sales_year_location_summary[PROFIT_COL] = np.nan
 
     return grouped, sales_year_summary, sales_location_summary, sales_year_location_summary, {
         "sales_sku": sku_col,
@@ -366,6 +395,7 @@ def aggregate_sales(
         "sales_location": location_col or "Not detected",
         "sales_manual_location_label": manual_location or "Not used",
         "sales_amount": amount_col or "Not detected",
+        "sales_profit": profit_col or "Not detected",
         "sales_filter_keyword": filter_keyword or "Not used",
         "sales_year_mode": "Manual upload year" if manual_year_mode else "Latest 12 months / detected from sales date",
     }
@@ -640,8 +670,7 @@ def build_purchase_summary(
             {
                 "Year": year,
                 "Period": period,
-                "Purchase Amount": float(subset["_purchase_amount"].sum()),
-                "Record Count": int(len(subset)),
+                PO_COST_COL: float(subset["_purchase_amount"].sum()),
             }
         )
     summary = pd.DataFrame(rows)
@@ -652,12 +681,12 @@ def build_purchase_summary(
     sku_location_summary = None
     if sku_col or product_col:
         group_cols = [c for c in [sku_col, product_col] if c]
-        aggregations = {"Purchase Amount": ("_purchase_amount", "sum"), "Record Count": ("_purchase_amount", "count")}
+        aggregations = {PO_COST_COL: ("_purchase_amount", "sum")}
         if qty_col:
             aggregations["Quantity"] = (qty_col, lambda s: pd.to_numeric(s, errors="coerce").fillna(0).sum())
-        sku_summary = work.groupby(group_cols, dropna=False).agg(**aggregations).reset_index().sort_values("Purchase Amount", ascending=False)
+        sku_summary = work.groupby(group_cols, dropna=False).agg(**aggregations).reset_index().sort_values(PO_COST_COL, ascending=False)
         year_amount = work.pivot_table(index=group_cols, columns="_year", values="_purchase_amount", aggfunc="sum", fill_value=0).reset_index()
-        year_amount.columns = [f"{int(col)} Purchase Amount" if isinstance(col, (int, float, np.integer, np.floating)) else col for col in year_amount.columns]
+        year_amount.columns = [f"{int(col)} PO Cost ($ CAD)" if isinstance(col, (int, float, np.integer, np.floating)) else col for col in year_amount.columns]
         if qty_col:
             work["_purchase_qty"] = pd.to_numeric(work[qty_col], errors="coerce").fillna(0)
             year_qty = work.pivot_table(index=group_cols, columns="_year", values="_purchase_qty", aggfunc="sum", fill_value=0).reset_index()
@@ -666,16 +695,16 @@ def build_purchase_summary(
         else:
             sku_summary = sku_summary.merge(year_amount, on=group_cols, how="left")
         for year in [2024, 2025, 2026]:
-            amount_col_name = f"{year} Purchase Amount"
+            amount_col_name = f"{year} PO Cost ($ CAD)"
             if amount_col_name not in sku_summary.columns:
                 sku_summary[amount_col_name] = 0
             qty_col_name = f"{year} Purchase Qty"
             if qty_col and qty_col_name not in sku_summary.columns:
                 sku_summary[qty_col_name] = 0
-        ordered_cols = group_cols + ["Purchase Amount", "Record Count"]
+        ordered_cols = group_cols + [PO_COST_COL]
         if qty_col and "Quantity" in sku_summary.columns:
             ordered_cols.append("Quantity")
-        ordered_cols += [f"{year} Purchase Amount" for year in [2024, 2025, 2026]]
+        ordered_cols += [f"{year} PO Cost ($ CAD)" for year in [2024, 2025, 2026]]
         ordered_cols += [f"{year} Purchase Qty" for year in [2024, 2025, 2026] if f"{year} Purchase Qty" in sku_summary.columns]
         sku_summary = sku_summary[[col for col in ordered_cols if col in sku_summary.columns]]
 
@@ -685,19 +714,19 @@ def build_purchase_summary(
             work.groupby("_location", dropna=False)
             .agg(Purchase_Amount=("_purchase_amount", "sum"), Record_Count=("_purchase_amount", "count"))
             .reset_index()
-            .rename(columns={"_location": "Location", "Purchase_Amount": "Purchase Amount", "Record_Count": "Record Count"})
-            .sort_values("Purchase Amount", ascending=False)
+            .rename(columns={"_location": "Location", "Purchase_Amount": PO_COST_COL})
+            .sort_values(PO_COST_COL, ascending=False)
         )
         location_year = work.pivot_table(index="_location", columns="_year", values="_purchase_amount", aggfunc="sum", fill_value=0).reset_index()
-        location_year.columns = [f"{int(col)} Purchase Amount" if isinstance(col, (int, float, np.integer, np.floating)) else "Location" for col in location_year.columns]
+        location_year.columns = [f"{int(col)} PO Cost ($ CAD)" if isinstance(col, (int, float, np.integer, np.floating)) else "Location" for col in location_year.columns]
         location_summary = location_summary.merge(location_year, on="Location", how="left")
         for year in [2024, 2025, 2026]:
-            col = f"{year} Purchase Amount"
+            col = f"{year} PO Cost ($ CAD)"
             if col not in location_summary.columns:
                 location_summary[col] = 0
-        location_summary = location_summary[["Location", "Purchase Amount", "Record Count", "2024 Purchase Amount", "2025 Purchase Amount", "2026 Purchase Amount"]]
+        location_summary = location_summary[["Location", PO_COST_COL, "2024 PO Cost ($ CAD)", "2025 PO Cost ($ CAD)", "2026 PO Cost ($ CAD)"]]
 
-        aggregations = {"Purchase Amount": ("_purchase_amount", "sum"), "Record Count": ("_purchase_amount", "count")}
+        aggregations = {PO_COST_COL: ("_purchase_amount", "sum")}
         if qty_col:
             work["_purchase_qty"] = pd.to_numeric(work[qty_col], errors="coerce").fillna(0)
             aggregations["Purchase Qty"] = ("_purchase_qty", "sum")
@@ -707,7 +736,7 @@ def build_purchase_summary(
             .agg(**aggregations)
             .reset_index()
             .rename(columns={"_year": "Year", "_location": "Location"})
-            .sort_values(["Year", "Purchase Amount"], ascending=[False, False])
+            .sort_values(["Year", PO_COST_COL], ascending=[False, False])
         )
         if year_location_summary is not None and not year_location_summary.empty:
             year_location_summary["Year"] = year_location_summary["Year"].astype(int)
@@ -718,8 +747,8 @@ def build_purchase_summary(
                 work.groupby(sku_loc_group_cols, dropna=False)
                 .agg(Purchase_Amount=("_purchase_amount", "sum"), Record_Count=("_purchase_amount", "count"))
                 .reset_index()
-                .rename(columns={"_location": "Location", "Purchase_Amount": "Purchase Amount", "Record_Count": "Record Count"})
-                .sort_values("Purchase Amount", ascending=False)
+                .rename(columns={"_location": "Location", "Purchase_Amount": PO_COST_COL})
+                .sort_values(PO_COST_COL, ascending=False)
             )
 
     key_records = []
@@ -734,13 +763,13 @@ def build_purchase_summary(
         key_work = pd.concat(key_records, ignore_index=True).drop_duplicates(subset=["_line_id", "_purchase_key"])
         purchase_key_summary = key_work.pivot_table(index="_purchase_key", columns="_year", values="_purchase_amount", aggfunc="sum", fill_value=0).reset_index()
         purchase_key_summary.columns = [
-            f"{int(col)} Purchase Amount" if isinstance(col, (int, float, np.integer, np.floating)) else col for col in purchase_key_summary.columns
+            f"{int(col)} PO Cost ($ CAD)" if isinstance(col, (int, float, np.integer, np.floating)) else col for col in purchase_key_summary.columns
         ]
         for year in [2024, 2025, 2026]:
-            col = f"{year} Purchase Amount"
+            col = f"{year} PO Cost ($ CAD)"
             if col not in purchase_key_summary.columns:
                 purchase_key_summary[col] = 0
-        purchase_key_summary["Total Purchase Amount"] = purchase_key_summary[[f"{year} Purchase Amount" for year in [2024, 2025, 2026]]].sum(axis=1)
+        purchase_key_summary[TOTAL_PO_COST_COL] = purchase_key_summary[[f"{year} PO Cost ($ CAD)" for year in [2024, 2025, 2026]]].sum(axis=1)
     detected["purchase_total_records_before_filter"] = raw_records
     detected["purchase_total_records_after_filter"] = len(work)
     return summary, sku_summary, purchase_key_summary, location_summary, year_location_summary, sku_location_summary, detected
@@ -754,11 +783,12 @@ def build_location_year_business_view(
     view = None
     if sales_year_location_summary is not None and not sales_year_location_summary.empty:
         sales_cols = ["Year", "Location", "Sales Qty"]
-        if "Sales Amount" in sales_year_location_summary.columns:
-            sales_cols.append("Sales Amount")
+        for col in [SALES_AMOUNT_COL, PROFIT_COL]:
+            if col in sales_year_location_summary.columns:
+                sales_cols.append(col)
         view = sales_year_location_summary[sales_cols].copy()
     if purchase_year_location_summary is not None and not purchase_year_location_summary.empty:
-        po_cols = ["Year", "Location", "Purchase Amount", "Record Count"]
+        po_cols = ["Year", "Location", PO_COST_COL]
         if "Purchase Qty" in purchase_year_location_summary.columns:
             po_cols.append("Purchase Qty")
         purchase_view = purchase_year_location_summary[po_cols].copy()
@@ -769,21 +799,21 @@ def build_location_year_business_view(
         stock_cols = ["Location", "Available", "Incoming", "On Hand", "Future Inventory"]
         stock_cols = [col for col in stock_cols if col in stock_location_summary.columns]
         view = view.merge(stock_location_summary[stock_cols], on="Location", how="left")
-    for col in ["Sales Qty", "Sales Amount", "Purchase Amount", "Purchase Qty", "Available", "Incoming", "On Hand", "Future Inventory"]:
+    for col in ["Sales Qty", SALES_AMOUNT_COL, PROFIT_COL, PO_COST_COL, "Purchase Qty", "Available", "Incoming", "On Hand", "Future Inventory"]:
         if col in view.columns:
             view[col] = pd.to_numeric(view[col], errors="coerce").fillna(0)
     ordered = [
         "Year",
         "Location",
         "Sales Qty",
-        "Sales Amount",
-        "Purchase Amount",
+        SALES_AMOUNT_COL,
+        PROFIT_COL,
+        PO_COST_COL,
         "Purchase Qty",
         "Available",
         "Incoming",
         "On Hand",
         "Future Inventory",
-        "Record Count",
     ]
     ordered = [col for col in ordered if col in view.columns]
     return view[ordered].sort_values(["Year", "Location"], ascending=[False, True])
@@ -798,30 +828,34 @@ def build_sales_purchase_year_summary(
     view = None
     if sales_year_summary is not None and not sales_year_summary.empty:
         cols = ["Year", "SKU Count", "Sales Qty"]
-        if "Sales Amount" in sales_year_summary.columns:
-            cols.append("Sales Amount")
+        for col in [SALES_AMOUNT_COL, PROFIT_COL]:
+            if col in sales_year_summary.columns:
+                cols.append(col)
         view = sales_year_summary[cols].copy()
     if purchase_summary is not None and not purchase_summary.empty:
-        purchase_view = purchase_summary[["Year", "Purchase Amount", "Record Count"]].copy()
+        purchase_view = purchase_summary[["Year", PO_COST_COL]].copy()
         view = purchase_view if view is None else view.merge(purchase_view, on="Year", how="outer")
     if view is None or view.empty:
         return None
-    for col in ["SKU Count", "Sales Qty", "Sales Amount", "Purchase Amount", "Record Count"]:
+    for col in ["SKU Count", "Sales Qty", PO_COST_COL]:
         if col in view.columns:
             view[col] = pd.to_numeric(view[col], errors="coerce").fillna(0)
-    if {"Purchase Amount", "Sales Qty"}.issubset(view.columns):
-        view["Purchase Amount / Sales Qty"] = np.where(view["Sales Qty"] > 0, view["Purchase Amount"] / view["Sales Qty"], np.nan)
-    if {"Purchase Amount", "Sales Amount"}.issubset(view.columns):
-        view["Purchase / Sales Amount"] = np.where(view["Sales Amount"] > 0, view["Purchase Amount"] / view["Sales Amount"], np.nan)
+    for col in [SALES_AMOUNT_COL, PROFIT_COL]:
+        if col in view.columns:
+            view[col] = pd.to_numeric(view[col], errors="coerce")
+    if {PO_COST_COL, "Sales Qty"}.issubset(view.columns):
+        view[COST_PER_UNIT_COL] = np.where(view["Sales Qty"] > 0, view[PO_COST_COL] / view["Sales Qty"], np.nan)
+    if {PO_COST_COL, SALES_AMOUNT_COL}.issubset(view.columns):
+        view[PO_SALES_RATIO_COL] = np.where(view[SALES_AMOUNT_COL] > 0, view[PO_COST_COL] / view[SALES_AMOUNT_COL], np.nan)
     ordered = [
         "Year",
         "SKU Count",
         "Sales Qty",
-        "Sales Amount",
-        "Purchase Amount",
-        "Purchase Amount / Sales Qty",
-        "Purchase / Sales Amount",
-        "Record Count",
+        SALES_AMOUNT_COL,
+        PROFIT_COL,
+        PO_COST_COL,
+        COST_PER_UNIT_COL,
+        PO_SALES_RATIO_COL,
     ]
     return view[[col for col in ordered if col in view.columns]].sort_values("Year")
 
@@ -910,7 +944,7 @@ def build_analysis(
     final = apply_lifecycle_strategy(final)
     if purchase_key_summary is not None:
         final = final.merge(purchase_key_summary, left_on="Product SKU", right_on="_purchase_key", how="left").drop(columns=["_purchase_key"], errors="ignore")
-        for col in ["2024 Purchase Amount", "2025 Purchase Amount", "2026 Purchase Amount", "Total Purchase Amount"]:
+        for col in ["2024 PO Cost ($ CAD)", "2025 PO Cost ($ CAD)", "2026 PO Cost ($ CAD)", TOTAL_PO_COST_COL]:
             final[col] = pd.to_numeric(final.get(col, 0), errors="coerce").fillna(0)
 
     base_cols = [
@@ -929,7 +963,7 @@ def build_analysis(
         "Inventory Status",
         "Action",
     ]
-    purchase_cols_in_final = [c for c in ["2024 Purchase Amount", "2025 Purchase Amount", "2026 Purchase Amount", "Total Purchase Amount"] if c in final.columns]
+    purchase_cols_in_final = [c for c in ["2024 PO Cost ($ CAD)", "2025 PO Cost ($ CAD)", "2026 PO Cost ($ CAD)", TOTAL_PO_COST_COL] if c in final.columns]
     base_cols = base_cols + purchase_cols_in_final
     lifecycle_cols = [c for c in ["Recommendation / Lifecycle Status", "Lifecycle Type", "Lifecycle Action", "Lifecycle Note"] if c in final.columns]
     base_cols = base_cols + lifecycle_cols
@@ -949,7 +983,7 @@ def build_analysis(
         insights["purchase_location_summary"] = purchase_location_summary
         insights["purchase_year_location_summary"] = purchase_year_location_summary
         insights["purchase_sku_location_summary"] = purchase_sku_location_summary
-        insights["purchase_total"] = float(purchase_summary["Purchase Amount"].sum())
+        insights["purchase_total"] = float(purchase_summary[PO_COST_COL].sum())
     if sales_location_summary is not None:
         insights["sales_location_summary"] = sales_location_summary
     if sales_year_summary is not None:
@@ -1222,7 +1256,6 @@ def generate_excel(result: AnalysisResult) -> bytes:
     if result.stock_location_summary is not None and not result.stock_location_summary.empty:
         sheets.append(("Stock by Location", result.stock_location_summary, "StockByLocationTable", []))
     if result.purchase_summary is not None:
-        sheets.append(("Purchase Summary", result.purchase_summary, "PurchaseSummaryTable", []))
         if result.purchase_sku_summary is not None and not result.purchase_sku_summary.empty:
             sheets.append(("Purchase by SKU", result.purchase_sku_summary, "PurchaseBySKUTable", []))
         if result.purchase_location_summary is not None and not result.purchase_location_summary.empty:
@@ -1490,7 +1523,7 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
             f"{insights.get('renewal_count', 0):,} renewal items."
         )
 
-    doc.add_heading("Top 5 SKUs by 12-Month Sales", level=2)
+    doc.add_heading("Top 5 SKUs by Sales Qty", level=2)
     top_cols = ["Product SKU", "Product Name", "Qty", "Contribution %", "Cumulative %", "SABC Type", "Coverage", "Inventory Status", "Action"]
     add_table(doc, insights["top_sku_table"][top_cols], max_rows=5)
 
@@ -1500,9 +1533,9 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     if any(k.startswith("catalogue_") for k in result.detected_columns):
         add_key_value_paragraph(doc, "Optional Catalogue", "Catalogue fields were linked by SKU and added to the final analysis, including category, lifecycle status, pricing, case pack, margin, and MOQ risk when available.")
     if result.purchase_summary is not None:
-        add_key_value_paragraph(doc, "Optional Purchase / PO History", "Purchase amount was summarized by year for 2024, 2025, and 2026 year-to-date.")
+        add_key_value_paragraph(doc, "Optional Purchase / PO History", "PO cost was summarized by year for 2024, 2025, and 2026 year-to-date.")
     if result.sales_year_summary is not None:
-        add_key_value_paragraph(doc, "Year-Labeled Sales Reports", "Sales files were uploaded by year, so sales trend is compared against PO purchase amount by the same uploaded year.")
+        add_key_value_paragraph(doc, "Year-Labeled Sales Reports", "Sales files were uploaded by year, so sales trend is compared against PO cost by the same uploaded year.")
     if result.location_year_business_view is not None:
         add_key_value_paragraph(doc, "Location Logic", "When Location is available in Sales, Stock, or PO files, the report keeps the main SKU analysis unchanged and adds location-level views automatically.")
 
@@ -1519,10 +1552,10 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
             ["Coverage", "Adjusted Future Inventory / Avg Monthly Sales"],
             ["Inventory Status", "Stockout, Urgent, Healthy, Monitor, Overstock, or No Sales / Review"],
             ["Action", "Operational recommendation linked to inventory status"],
-            ["2024 Purchase Amount", "PO line purchase amount matched to this SKU from the 2024 uploaded PO file"],
-            ["2025 Purchase Amount", "PO line purchase amount matched to this SKU from the 2025 uploaded PO file"],
-            ["2026 Purchase Amount", "PO line purchase amount matched to this SKU from the 2026 YTD uploaded PO file"],
-            ["Total Purchase Amount", "Combined matched purchase amount across uploaded PO files"],
+            ["2024 PO Cost ($ CAD)", "PO line cost matched to this SKU from the 2024 uploaded PO file"],
+            ["2025 PO Cost ($ CAD)", "PO line cost matched to this SKU from the 2025 uploaded PO file"],
+            ["2026 PO Cost ($ CAD)", "PO line cost matched to this SKU from the 2026 YTD uploaded PO file"],
+            [TOTAL_PO_COST_COL, "Combined matched PO cost across uploaded PO files"],
             ["Lifecycle Type", "Normalized catalogue recommendation status, such as New / Coming Soon, Discontinued, Display Risk, or Renewal"],
             ["Lifecycle Action", "Business action override driven by catalogue recommendation when applicable"],
             ["Lifecycle Note", "Explanation of why catalogue recommendation changes the SKU strategy"],
@@ -1540,7 +1573,8 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     if result.sales_purchase_year_summary is not None and not result.sales_purchase_year_summary.empty:
         doc.add_heading("Sales vs Purchase Trend by Year", level=1)
         doc.add_paragraph(
-            "This view compares uploaded sales files and PO files by the same year label. It helps identify whether purchase investment is moving in line with sales demand."
+            "This view compares uploaded sales files and PO files by the same year label. It helps identify whether PO cost is moving in line with sales demand. "
+            "A lower PO Cost / Sales Qty usually means less purchasing cost was needed for each unit sold, but it should be read together with current stock and future replenishment needs."
         )
         add_table(doc, result.sales_purchase_year_summary, max_rows=10)
     elif result.sales_year_summary is not None and not result.sales_year_summary.empty:
@@ -1554,14 +1588,9 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     doc.add_picture(status_png, width=Inches(6.5))
 
     if result.purchase_summary is not None:
-        doc.add_heading("Purchase Amount by Year", level=1)
-        doc.add_paragraph(
-            "This section summarizes total purchase amount by calendar year. 2026 is calculated as year-to-date based on the uploaded purchase dates."
-        )
-        add_table(doc, result.purchase_summary, max_rows=10)
         if result.purchase_sku_summary is not None and not result.purchase_sku_summary.empty:
-            doc.add_heading("Purchase Amount by SKU", level=2)
-            doc.add_paragraph("This table ranks purchase lines by SKU/Product after applying the purchase keyword filter when provided.")
+            doc.add_heading("PO Cost by SKU", level=2)
+            doc.add_paragraph("This table ranks PO lines by SKU/Product after applying the brand and location filters when provided.")
             add_table(doc, result.purchase_sku_summary, max_rows=15)
             integrated_purchase_cols = [
                 "Product SKU",
@@ -1569,20 +1598,20 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
                 "Qty",
                 "SABC Type",
                 "Inventory Status",
-                "2024 Purchase Amount",
-                "2025 Purchase Amount",
-                "2026 Purchase Amount",
-                "Total Purchase Amount",
+                "2024 PO Cost ($ CAD)",
+                "2025 PO Cost ($ CAD)",
+                "2026 PO Cost ($ CAD)",
+                TOTAL_PO_COST_COL,
             ]
             integrated_purchase_cols = [col for col in integrated_purchase_cols if col in result.final.columns]
-            integrated_purchase = result.final[result.final.get("Total Purchase Amount", 0) > 0].sort_values("Total Purchase Amount", ascending=False)
+            integrated_purchase = result.final[result.final.get(TOTAL_PO_COST_COL, 0) > 0].sort_values(TOTAL_PO_COST_COL, ascending=False)
             if not integrated_purchase.empty:
                 doc.add_heading("Integrated Sales / Inventory / Purchase View", level=2)
-                doc.add_paragraph("This view connects matched PO purchase amount back to the main SKU analysis, so purchase investment can be compared against sales and inventory status.")
+                doc.add_paragraph("This view connects matched PO cost back to the main SKU analysis, so purchase investment can be compared against sales and inventory status.")
                 add_table(doc, integrated_purchase[integrated_purchase_cols], max_rows=15)
         if result.purchase_location_summary is not None and not result.purchase_location_summary.empty:
-            doc.add_heading("Purchase Amount by Location", level=2)
-            doc.add_paragraph("This view separates purchase amount by receiving location, so PO investment can be reviewed without manually filtering location before upload.")
+            doc.add_heading("PO Cost by Location", level=2)
+            doc.add_paragraph("This view separates PO cost by receiving location, so PO investment can be reviewed without manually filtering location before upload.")
             add_table(doc, result.purchase_location_summary, max_rows=10)
         if result.purchase_sku_location_summary is not None and not result.purchase_sku_location_summary.empty:
             doc.add_heading("Top SKU Purchase by Location", level=2)
