@@ -166,7 +166,8 @@ TEXT = {
 EXPLANATIONS = {
     "English": {
         "Final Analysis": {
-            "Product SKU": "Unique product code used to merge Sales and Stock reports.",
+            "Product SKU": "Unique product code used to merge Sales, Stock, PO, and Catalogue reports. If catalogue matching finds short and long codes for the same product, they are combined as code / code.",
+            "Matched Sales SKUs": "All SKU codes treated as the same product after exact SKU matching and catalogue product-name/color matching.",
             "Product Name": "Product description from the Sales report; stock name is used only if sales name is missing.",
             "Qty": "Sales quantity used for current inventory decisions. If year-labeled sales files are uploaded, this uses only the latest uploaded year.",
             "Sales Amount ($ CAD)": "Sales revenue in the current analysis period when the Sales report includes an amount column.",
@@ -184,8 +185,11 @@ EXPLANATIONS = {
             "Inventory Status": "Stock health label based on coverage.",
             "Action": "Suggested business action based on Inventory Status.",
             "2024 PO Cost ($ CAD)": "PO line cost matched to this SKU for the 2024 uploaded PO file.",
+            "2024 Purchase Qty": "Purchase quantity matched to this SKU for the 2024 uploaded PO file.",
             "2025 PO Cost ($ CAD)": "PO line cost matched to this SKU for the 2025 uploaded PO file.",
+            "2025 Purchase Qty": "Purchase quantity matched to this SKU for the 2025 uploaded PO file.",
             "2026 PO Cost ($ CAD)": "PO line cost matched to this SKU for the 2026 YTD uploaded PO file.",
+            "2026 Purchase Qty": "Purchase quantity matched to this SKU for the 2026 YTD uploaded PO file.",
             "Total PO Cost ($ CAD)": "Combined PO cost from 2024, 2025, and 2026 uploaded PO files.",
         },
         "SABC Summary": {
@@ -263,7 +267,8 @@ EXPLANATIONS = {
     },
     ZH: {
         "Final Analysis": {
-            "Product SKU": "\u7528\u4e8e\u8fde\u63a5 Sales \u548c Stock \u4e24\u4efd\u62a5\u8868\u7684\u552f\u4e00\u4ea7\u54c1\u7f16\u7801\u3002",
+            "Product SKU": "\u7528\u4e8e\u8fde\u63a5 Sales\u3001Stock\u3001PO \u548c\u62a5\u4ef7\u5355\u7684\u4ea7\u54c1\u7f16\u7801\u3002\u5982\u679c\u62a5\u4ef7\u5355\u5339\u914d\u5230\u540c\u4e00\u4ea7\u54c1\u7684\u77ed\u7801\u548c\u957f\u7801\uff0c\u4f1a\u5408\u5e76\u663e\u793a\u6210 code / code\u3002",
+            "Matched Sales SKUs": "\u7cfb\u7edf\u5224\u65ad\u4e3a\u540c\u4e00\u4ea7\u54c1\u7684\u6240\u6709 code\uff0c\u4f1a\u7528 SKU \u7cbe\u51c6\u5339\u914d + \u62a5\u4ef7\u5355\u4ea7\u54c1\u540d/\u8272\u53f7\u5339\u914d\u6765\u5408\u5e76\u3002",
             "Product Name": "\u4ea7\u54c1\u540d\u79f0\uff0c\u4f18\u5148\u6765\u81ea\u9500\u552e\u62a5\u8868\u3002",
             "Qty": "\u7528\u4e8e\u5f53\u524d\u5e93\u5b58\u51b3\u7b56\u7684\u9500\u91cf\u3002\u5982\u679c\u4e0a\u4f20\u4e86\u591a\u4e2a\u5e74\u4efd sales file\uff0c\u8fd9\u91cc\u53ea\u7528\u6700\u65b0\u4e0a\u4f20\u5e74\u4efd\u7684\u9500\u91cf\u3002",
             "Sales Amount ($ CAD)": "\u5f53\u524d\u5206\u6790\u533a\u95f4\u7684\u9500\u552e\u989d\uff0c\u9700\u8981 Sales Report \u5305\u542b\u91d1\u989d\u5217\u3002",
@@ -281,8 +286,11 @@ EXPLANATIONS = {
             "Inventory Status": "\u6839\u636e\u9500\u91cf\u548c coverage \u5224\u65ad\u5e93\u5b58\u72b6\u6001\u3002",
             "Action": "\u6839\u636e\u5e93\u5b58\u72b6\u6001\u81ea\u52a8\u7ed9\u51fa\u7684\u4e1a\u52a1\u5efa\u8bae\u3002",
             "2024 PO Cost ($ CAD)": "\u6309 SKU \u5339\u914d\u5230\u8be5\u4ea7\u54c1\u7684 2024 PO line \u8fdb\u8d27\u6210\u672c\u3002",
+            "2024 Purchase Qty": "\u6309 SKU \u5339\u914d\u5230\u8be5\u4ea7\u54c1\u7684 2024 \u8fdb\u8d27\u6570\u91cf\u3002",
             "2025 PO Cost ($ CAD)": "\u6309 SKU \u5339\u914d\u5230\u8be5\u4ea7\u54c1\u7684 2025 PO line \u8fdb\u8d27\u6210\u672c\u3002",
+            "2025 Purchase Qty": "\u6309 SKU \u5339\u914d\u5230\u8be5\u4ea7\u54c1\u7684 2025 \u8fdb\u8d27\u6570\u91cf\u3002",
             "2026 PO Cost ($ CAD)": "\u6309 SKU \u5339\u914d\u5230\u8be5\u4ea7\u54c1\u7684 2026 YTD PO line \u8fdb\u8d27\u6210\u672c\u3002",
+            "2026 Purchase Qty": "\u6309 SKU \u5339\u914d\u5230\u8be5\u4ea7\u54c1\u7684 2026 YTD \u8fdb\u8d27\u6570\u91cf\u3002",
             "Total PO Cost ($ CAD)": "2024\u30012025\u30012026 \u4e09\u4e2a PO \u6587\u4ef6\u5339\u914d\u5230\u8be5 SKU \u7684\u8fdb\u8d27\u6210\u672c\u5408\u8ba1\u3002",
         },
         "SABC Summary": {

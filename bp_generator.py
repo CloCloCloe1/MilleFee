@@ -648,7 +648,7 @@ def apply_catalogue(final: pd.DataFrame, catalogue_df: pd.DataFrame | None) -> t
         rp = pd.to_numeric(merged["RP USD"], errors="coerce")
         wholesale = pd.to_numeric(merged["Wholesale Price"], errors="coerce")
         merged["Margin %"] = np.where(rp > 0, (rp - wholesale) / rp, np.nan)
-    if "Outer Case" in merged.columns:
+    if "Outer Case" in merged.columns and "Avg Monthly Sales" in merged.columns:
         outer = pd.to_numeric(merged["Outer Case"], errors="coerce")
         merged["MOQ risk"] = np.where((merged["Avg Monthly Sales"] > 0) & (outer > merged["Avg Monthly Sales"] * 3), "High MOQ Risk", "")
     return merged, detected
@@ -721,6 +721,108 @@ def apply_lifecycle_strategy(final: pd.DataFrame) -> pd.DataFrame:
     )
     work.loc[override_mask, "Action"] = work.loc[override_mask, "Lifecycle Action"]
     return work
+
+
+def catalogue_alias_groups(catalogue_df: pd.DataFrame | None, sales_sku_year_summary: pd.DataFrame | None) -> list[list[str]]:
+    if catalogue_df is None or sales_sku_year_summary is None or sales_sku_year_summary.empty:
+        return []
+    sku_col = detect_column(catalogue_df, ["Product SKU", "SKU", "JAN", "Barcode", "Product Code", "Product Code Product Code", "Code"], required=False)
+    product_col = detect_column(catalogue_df, ["Product name", "Product Name", "Product / Service", "Name", "Description"], required=False)
+    color_col = detect_column(catalogue_df, ["Color name", "Color Name", "Shade", "Shade Name", "Color"], required=False)
+    if not sku_col or not product_col:
+        return []
+    sales_lookup = sales_sku_year_summary[["Product SKU", "Product Name"]].drop_duplicates().copy()
+    sales_lookup["_match_sku"] = sales_lookup["Product SKU"].map(normalize_sku)
+    sales_lookup["_match_name"] = sales_lookup["Product Name"].map(normalize_match_text)
+    sales_lookup["_variant"] = sales_lookup["Product Name"].map(variant_number)
+    sales_lookup["_auxiliary_sku"] = sales_lookup["Product Name"].astype(str).str.contains("tester|display", case=False, na=False)
+    groups = []
+    for _, row in catalogue_df.iterrows():
+        exact = normalize_sku(row.get(sku_col))
+        product = row.get(product_col, "")
+        color = row.get(color_col, "") if color_col else ""
+        tokens = product_tokens(product)
+        variant = variant_number(color) or variant_number(product)
+        matched = [exact] if exact else []
+        if len(tokens) >= 2 and variant:
+            mask = sales_lookup["_variant"].eq(variant) & (~sales_lookup["_auxiliary_sku"])
+            for token in tokens:
+                mask = mask & sales_lookup["_match_name"].str.contains(rf"\b{re.escape(token)}\b", regex=True, na=False)
+            matched += [sku for sku in sales_lookup.loc[mask, "_match_sku"].tolist() if sku]
+        matched = list(dict.fromkeys(matched))
+        if len(matched) > 1:
+            groups.append(matched)
+    return groups
+
+
+def consolidate_alias_rows(final: pd.DataFrame, groups: list[list[str]]) -> pd.DataFrame:
+    if not groups or final.empty:
+        return final
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        if parent[x] != x:
+            parent[x] = find(parent[x])
+        return parent[x]
+
+    def union(a, b):
+        parent[find(b)] = find(a)
+
+    for group in groups:
+        clean = [normalize_sku(sku) for sku in group if normalize_sku(sku)]
+        if not clean:
+            continue
+        for sku in clean[1:]:
+            union(clean[0], sku)
+
+    component = {}
+    for sku in list(parent):
+        component.setdefault(find(sku), []).append(sku)
+    sku_to_component = {sku: sorted(values, key=lambda x: (len(x), x)) for values in component.values() for sku in values}
+    work = final.copy()
+    work["_self_sku"] = work["Product SKU"].map(normalize_sku)
+    work["_alias_group"] = work["_self_sku"].map(lambda sku: " / ".join(sku_to_component.get(sku, [sku])))
+    rows = []
+    for group_key, grp in work.groupby("_alias_group", dropna=False):
+        out = {}
+        alias_skus = list(dict.fromkeys([sku for values in grp["_self_sku"].map(lambda sku: sku_to_component.get(sku, [sku])) for sku in values if sku]))
+        out["Product SKU"] = " / ".join(sorted(alias_skus, key=lambda x: (len(x), x)))
+        out["Matched Sales SKUs"] = out["Product SKU"]
+        name_source = grp.sort_values("Qty", ascending=False) if "Qty" in grp.columns else grp
+        out["Product Name"] = mode_or_first(name_source["Product Name"]) if "Product Name" in name_source else ""
+        sum_like = {
+            "Qty",
+            SALES_AMOUNT_COL,
+            PROFIT_COL,
+            "Available",
+            "Incoming",
+            "On Hand",
+            "Future Inventory",
+            "Adjusted Future Inventory",
+            "2024 PO Cost ($ CAD)",
+            "2025 PO Cost ($ CAD)",
+            "2026 PO Cost ($ CAD)",
+            "2024 Purchase Qty",
+            "2025 Purchase Qty",
+            "2026 Purchase Qty",
+            TOTAL_PO_COST_COL,
+        }
+        for col in grp.columns:
+            if col in {"Product SKU", "Product Name", "_self_sku", "_alias_group", SALES_MARGIN_COL, "Contribution %", "Cumulative %", "SABC Type", "Avg Monthly Sales", "Coverage", "Inventory Status", "Action"}:
+                continue
+            if col in sum_like:
+                out[col] = pd.to_numeric(grp[col], errors="coerce").fillna(0).sum()
+            else:
+                values = grp[col].dropna()
+                out[col] = values.iloc[0] if not values.empty else np.nan
+        if SALES_MARGIN_COL in grp.columns:
+            margin = pd.to_numeric(grp[SALES_MARGIN_COL], errors="coerce")
+            weights = pd.to_numeric(grp.get("Qty", 1), errors="coerce").fillna(0) if "Qty" in grp.columns else pd.Series(1, index=grp.index)
+            valid = margin.notna() & (weights > 0)
+            out[SALES_MARGIN_COL] = float(np.average(margin[valid], weights=weights[valid])) if valid.any() else np.nan
+        rows.append(out)
+    return pd.DataFrame(rows)
 
 
 def build_purchase_summary(
@@ -918,20 +1020,28 @@ def build_purchase_summary(
     key_cols = [c for c in [sku_col, barcode_col] if c]
     work["_line_id"] = range(len(work))
     for key_col in key_cols:
-        temp = work[["_line_id", key_col, "_year", "_purchase_amount"]].copy()
+        temp = work[["_line_id", key_col, "_year", "_purchase_amount", "_purchase_qty"]].copy()
         temp["_purchase_key"] = temp[key_col].map(normalize_sku)
         temp = temp[temp["_purchase_key"] != ""]
-        key_records.append(temp[["_line_id", "_purchase_key", "_year", "_purchase_amount"]])
+        key_records.append(temp[["_line_id", "_purchase_key", "_year", "_purchase_amount", "_purchase_qty"]])
     if key_records:
         key_work = pd.concat(key_records, ignore_index=True).drop_duplicates(subset=["_line_id", "_purchase_key"])
-        purchase_key_summary = key_work.pivot_table(index="_purchase_key", columns="_year", values="_purchase_amount", aggfunc="sum", fill_value=0).reset_index()
-        purchase_key_summary.columns = [
-            f"{int(col)} PO Cost ($ CAD)" if isinstance(col, (int, float, np.integer, np.floating)) else col for col in purchase_key_summary.columns
+        purchase_amount_key_summary = key_work.pivot_table(index="_purchase_key", columns="_year", values="_purchase_amount", aggfunc="sum", fill_value=0).reset_index()
+        purchase_amount_key_summary.columns = [
+            f"{int(col)} PO Cost ($ CAD)" if isinstance(col, (int, float, np.integer, np.floating)) else col for col in purchase_amount_key_summary.columns
         ]
+        purchase_qty_key_summary = key_work.pivot_table(index="_purchase_key", columns="_year", values="_purchase_qty", aggfunc="sum", fill_value=0).reset_index()
+        purchase_qty_key_summary.columns = [
+            f"{int(col)} Purchase Qty" if isinstance(col, (int, float, np.integer, np.floating)) else col for col in purchase_qty_key_summary.columns
+        ]
+        purchase_key_summary = purchase_amount_key_summary.merge(purchase_qty_key_summary, on="_purchase_key", how="outer")
         for year in [2024, 2025, 2026]:
             col = f"{year} PO Cost ($ CAD)"
             if col not in purchase_key_summary.columns:
                 purchase_key_summary[col] = 0
+            qty_col_name = f"{year} Purchase Qty"
+            if qty_col_name not in purchase_key_summary.columns:
+                purchase_key_summary[qty_col_name] = 0
         purchase_key_summary[TOTAL_PO_COST_COL] = purchase_key_summary[[f"{year} PO Cost ($ CAD)" for year in [2024, 2025, 2026]]].sum(axis=1)
     detected["purchase_total_records_before_filter"] = raw_records
     detected["purchase_total_records_after_filter"] = len(work)
@@ -1083,6 +1193,15 @@ def build_analysis(
     final = final.drop(columns=["Stock Product Name"], errors="ignore")
     for col in ["Available", "Incoming", "On Hand"]:
         final[col] = pd.to_numeric(final.get(col, 0), errors="coerce").fillna(0)
+    final, catalogue_cols = apply_catalogue(final, catalogue_df)
+    if purchase_key_summary is not None:
+        final = final.merge(purchase_key_summary, left_on="Product SKU", right_on="_purchase_key", how="left").drop(columns=["_purchase_key"], errors="ignore")
+        for col in ["2024 PO Cost ($ CAD)", "2025 PO Cost ($ CAD)", "2026 PO Cost ($ CAD)", "2024 Purchase Qty", "2025 Purchase Qty", "2026 Purchase Qty", TOTAL_PO_COST_COL]:
+            final[col] = pd.to_numeric(final.get(col, 0), errors="coerce").fillna(0)
+
+    final = consolidate_alias_rows(final, catalogue_alias_groups(catalogue_df, sales_sku_year_summary))
+    for col in ["Qty", "Available", "Incoming", "On Hand"]:
+        final[col] = pd.to_numeric(final.get(col, 0), errors="coerce").fillna(0)
 
     final = final.sort_values("Qty", ascending=False).reset_index(drop=True)
     total_qty = final["Qty"].sum()
@@ -1126,12 +1245,10 @@ def build_analysis(
         "No Sales / Review": "Review SKU",
     }
     final["Action"] = final["Inventory Status"].map(action_map)
-    final, catalogue_cols = apply_catalogue(final, catalogue_df)
+    if "Outer Case" in final.columns:
+        outer = pd.to_numeric(final["Outer Case"], errors="coerce")
+        final["MOQ risk"] = np.where((final["Avg Monthly Sales"] > 0) & (outer > final["Avg Monthly Sales"] * 3), "High MOQ Risk", "")
     final = apply_lifecycle_strategy(final)
-    if purchase_key_summary is not None:
-        final = final.merge(purchase_key_summary, left_on="Product SKU", right_on="_purchase_key", how="left").drop(columns=["_purchase_key"], errors="ignore")
-        for col in ["2024 PO Cost ($ CAD)", "2025 PO Cost ($ CAD)", "2026 PO Cost ($ CAD)", TOTAL_PO_COST_COL]:
-            final[col] = pd.to_numeric(final.get(col, 0), errors="coerce").fillna(0)
 
     base_cols = [
         "Product SKU",
@@ -1153,7 +1270,19 @@ def build_analysis(
         "Inventory Status",
         "Action",
     ]
-    purchase_cols_in_final = [c for c in ["2024 PO Cost ($ CAD)", "2025 PO Cost ($ CAD)", "2026 PO Cost ($ CAD)", TOTAL_PO_COST_COL] if c in final.columns]
+    purchase_cols_in_final = [
+        c
+        for c in [
+            "2024 Purchase Qty",
+            "2024 PO Cost ($ CAD)",
+            "2025 Purchase Qty",
+            "2025 PO Cost ($ CAD)",
+            "2026 Purchase Qty",
+            "2026 PO Cost ($ CAD)",
+            TOTAL_PO_COST_COL,
+        ]
+        if c in final.columns
+    ]
     base_cols = [c for c in base_cols if c in final.columns]
     base_cols = base_cols + purchase_cols_in_final
     lifecycle_cols = [c for c in ["Recommendation / Lifecycle Status", "Lifecycle Type", "Lifecycle Action", "Lifecycle Note"] if c in final.columns]
@@ -1883,6 +2012,8 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
             visible_columns.update(optional_df.columns)
     explanation = pd.DataFrame(
         [
+            ["Product SKU", "Product code used to merge Sales, Stock, PO, and Catalogue reports. If the catalogue links short and long codes to the same product, the codes are combined as code / code."],
+            ["Matched Sales SKUs", "All SKU codes treated as the same product after exact SKU matching and catalogue product-name/color matching."],
             ["Qty", f"Total SKU quantity sold in the current analysis period ({current_year} when year-labeled sales files are uploaded)"],
             [SALES_AMOUNT_COL, "Sales revenue from the Sales report when the uploaded file includes an amount column"],
             [PROFIT_COL, "Profit from the Sales report. Higher is usually better."],
@@ -1896,8 +2027,11 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
             ["Coverage", "Adjusted Future Inventory / Avg Monthly Sales"],
             ["Inventory Status", "Stockout, Urgent, Healthy, Monitor, Overstock, or No Sales / Review"],
             ["Action", "Operational recommendation linked to inventory status"],
+            ["2024 Purchase Qty", "Purchase quantity matched to this SKU from the 2024 uploaded PO file"],
             ["2024 PO Cost ($ CAD)", "PO line cost matched to this SKU from the 2024 uploaded PO file"],
+            ["2025 Purchase Qty", "Purchase quantity matched to this SKU from the 2025 uploaded PO file"],
             ["2025 PO Cost ($ CAD)", "PO line cost matched to this SKU from the 2025 uploaded PO file"],
+            ["2026 Purchase Qty", "Purchase quantity matched to this SKU from the 2026 YTD uploaded PO file"],
             ["2026 PO Cost ($ CAD)", "PO line cost matched to this SKU from the 2026 YTD uploaded PO file"],
             [TOTAL_PO_COST_COL, "Combined matched PO cost across uploaded PO files"],
             ["Lifecycle Type", "Normalized catalogue recommendation status, such as New / Coming Soon, Discontinued, Display Risk, or Renewal"],
@@ -1908,7 +2042,7 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     )
     if SALES_AMOUNT_COL not in visible_columns:
         explanation = explanation[explanation["Column"] != SALES_AMOUNT_COL]
-    add_table(doc, explanation, max_rows=20)
+    add_table(doc, explanation, max_rows=30)
 
     doc.add_heading("Historical Sales & PO Trend (2024-2026)", level=1)
     doc.add_paragraph(
@@ -2112,7 +2246,12 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
         sales_sku_lookup["_variant"] = sales_sku_lookup["Product Name"].map(variant_number)
         sales_sku_lookup["_auxiliary_sku"] = sales_sku_lookup["Product Name"].astype(str).str.contains("tester|display", case=False, na=False)
     final_lookup = result.final.copy()
-    final_lookup["_match_sku"] = final_lookup["Product SKU"].map(normalize_sku)
+    if "Matched Sales SKUs" in final_lookup.columns:
+        final_lookup["_alias_list"] = final_lookup["Matched Sales SKUs"].fillna(final_lookup["Product SKU"]).astype(str).str.split(r"\s*/\s*|\s*;\s*", regex=True)
+    else:
+        final_lookup["_alias_list"] = final_lookup["Product SKU"].astype(str).str.split(r"\s*/\s*|\s*;\s*", regex=True)
+    final_lookup = final_lookup.explode("_alias_list")
+    final_lookup["_match_sku"] = final_lookup["_alias_list"].map(normalize_sku)
     final_lookup["_match_name"] = final_lookup["Product Name"].map(normalize_match_text)
     final_lookup["_variant"] = final_lookup["Product Name"].map(variant_number)
     purchase_lookup = None
@@ -2164,6 +2303,7 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
                     valid = margin.notna() & (weights > 0)
                     enriched.at[idx, margin_col] = float(np.average(margin[valid], weights=weights[valid])) if valid.any() else 0
         final_rows = final_lookup[final_lookup["_match_sku"].isin(matched_skus)]
+        final_rows = final_rows.drop_duplicates("Product SKU")
         if not final_rows.empty:
             for source, target in [
                 ("Available", "Available (2026)"),
