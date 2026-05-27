@@ -2150,7 +2150,7 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
         for offset, col_name in enumerate(append_cols):
             value = value_lookup[sku].get(col_name, np.nan)
             if pd.isna(value):
-                value = None
+                value = "" if str(col_name) in {"SABC Type", "Inventory Status", "Action"} else 0
             cell = ws.cell(row_idx, start_col + offset, value)
             style_source = ws.cell(row_idx, start_col - 1)
             if style_source.has_style:
