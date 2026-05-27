@@ -825,11 +825,41 @@ def consolidate_alias_rows(final: pd.DataFrame, groups: list[list[str]]) -> pd.D
     return pd.DataFrame(rows)
 
 
+def sku_alias_component_map(groups: list[list[str]]) -> dict[str, str]:
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        if parent[x] != x:
+            parent[x] = find(parent[x])
+        return parent[x]
+
+    def union(a, b):
+        parent[find(b)] = find(a)
+
+    for group in groups or []:
+        clean = [normalize_sku(sku) for sku in group if normalize_sku(sku)]
+        if not clean:
+            continue
+        for sku in clean[1:]:
+            union(clean[0], sku)
+    components = {}
+    for sku in list(parent):
+        components.setdefault(find(sku), []).append(sku)
+    mapping = {}
+    for values in components.values():
+        canonical = sorted(values, key=lambda x: (len(x), x))[0]
+        for sku in values:
+            mapping[sku] = canonical
+    return mapping
+
+
 def build_purchase_summary(
     purchase_file: str | Path | BinaryIO | BytesIO | list[str | Path | BinaryIO | BytesIO] | None,
     purchase_filter_keyword: str = "",
     purchase_years: list[int] | None = None,
     location_filter: str = "",
+    alias_groups: list[list[str]] | None = None,
 ) -> tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, dict]:
     if purchase_file is None:
         return None, None, None, None, None, None, {}
@@ -1026,6 +1056,10 @@ def build_purchase_summary(
         key_records.append(temp[["_line_id", "_purchase_key", "_year", "_purchase_amount", "_purchase_qty"]])
     if key_records:
         key_work = pd.concat(key_records, ignore_index=True).drop_duplicates(subset=["_line_id", "_purchase_key"])
+        alias_map = sku_alias_component_map(alias_groups or [])
+        key_work["_purchase_group"] = key_work["_purchase_key"].map(lambda sku: alias_map.get(sku, sku))
+        key_work = key_work.drop_duplicates(subset=["_line_id", "_purchase_group"])
+        key_work["_purchase_key"] = key_work["_purchase_group"]
         purchase_amount_key_summary = key_work.pivot_table(index="_purchase_key", columns="_year", values="_purchase_amount", aggfunc="sum", fill_value=0).reset_index()
         purchase_amount_key_summary.columns = [
             f"{int(col)} PO Cost ($ CAD)" if isinstance(col, (int, float, np.integer, np.floating)) else col for col in purchase_amount_key_summary.columns
@@ -1169,15 +1203,20 @@ def build_analysis(
     sales_df = read_year_labeled_files(sales_file, sales_years) if isinstance(sales_file, list) else read_excel_any(sales_file)
     stock_df = read_excel_any(stock_file)
     catalogue_df = read_excel_with_detected_header(catalogue_file) if catalogue_file else None
-    purchase_summary, purchase_sku_summary, purchase_key_summary, purchase_location_summary, purchase_year_location_summary, purchase_sku_location_summary, purchase_cols = build_purchase_summary(
-        purchase_file, purchase_filter_keyword, purchase_years, location_filter
-    )
 
     sales, sales_year_summary, sales_location_summary, sales_year_location_summary, sales_top_sku_by_year, sales_sku_year_summary, sales_cols = aggregate_sales(
         sales_df,
         purchase_filter_keyword,
         manual_year_mode=bool(sales_years),
         location_filter=location_filter,
+    )
+    alias_groups = catalogue_alias_groups(catalogue_df, sales_sku_year_summary)
+    purchase_summary, purchase_sku_summary, purchase_key_summary, purchase_location_summary, purchase_year_location_summary, purchase_sku_location_summary, purchase_cols = build_purchase_summary(
+        purchase_file,
+        purchase_filter_keyword,
+        purchase_years,
+        location_filter,
+        alias_groups=alias_groups,
     )
     stock, stock_location_summary, stock_cols = aggregate_stock(stock_df, purchase_filter_keyword, location_filter)
     sales_purchase_year_summary = build_sales_purchase_year_summary(sales_year_summary, purchase_summary)
@@ -1199,7 +1238,7 @@ def build_analysis(
         for col in ["2024 PO Cost ($ CAD)", "2025 PO Cost ($ CAD)", "2026 PO Cost ($ CAD)", "2024 Purchase Qty", "2025 Purchase Qty", "2026 Purchase Qty", TOTAL_PO_COST_COL]:
             final[col] = pd.to_numeric(final.get(col, 0), errors="coerce").fillna(0)
 
-    final = consolidate_alias_rows(final, catalogue_alias_groups(catalogue_df, sales_sku_year_summary))
+    final = consolidate_alias_rows(final, alias_groups)
     for col in ["Qty", "Available", "Incoming", "On Hand"]:
         final[col] = pd.to_numeric(final.get(col, 0), errors="coerce").fillna(0)
 
