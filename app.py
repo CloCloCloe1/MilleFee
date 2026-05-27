@@ -23,6 +23,7 @@ TEXT = {
         "sales": "Upload Sales Report",
         "stock": "Upload Stock Levels",
         "catalogue": "Optional: Upload Catalogue / Price List",
+        "purchase": "Optional: Upload Purchase / PO History",
         "brand": "Brand name",
         "generate": "Generate Analysis",
         "missing_files": "Upload the Sales Report and Stock Levels Report to begin.",
@@ -47,6 +48,7 @@ TEXT = {
         "replenishment": "Replenishment Priority",
         "overstock_risk": "Overstock Risk",
         "auto_detected": "Auto-detected Columns",
+        "purchase_summary": "Purchase Summary",
         "field": "Field",
         "detected_column": "Detected Column",
         "column_notes": "Column explanation",
@@ -80,6 +82,7 @@ TEXT = {
         "sales": "\u4e0a\u4f20\u9500\u552e\u62a5\u8868",
         "stock": "\u4e0a\u4f20\u5e93\u5b58\u62a5\u8868",
         "catalogue": "\u53ef\u9009\uff1a\u4e0a\u4f20\u4ea7\u54c1\u76ee\u5f55 / \u4ef7\u683c\u8868",
+        "purchase": "\u53ef\u9009\uff1a\u4e0a\u4f20\u91c7\u8d2d / PO \u5386\u53f2",
         "brand": "\u54c1\u724c\u540d\u79f0",
         "generate": "\u751f\u6210\u5206\u6790",
         "missing_files": "\u8bf7\u5148\u4e0a\u4f20\u9500\u552e\u62a5\u8868\u548c\u5e93\u5b58\u62a5\u8868\u3002",
@@ -104,6 +107,7 @@ TEXT = {
         "replenishment": "\u8865\u8d27\u4f18\u5148\u7ea7",
         "overstock_risk": "\u5e93\u5b58\u8fc7\u9ad8\u98ce\u9669",
         "auto_detected": "\u81ea\u52a8\u8bc6\u522b\u7684\u5217\u540d",
+        "purchase_summary": "\u91c7\u8d2d\u91d1\u989d\u6c47\u603b",
         "field": "\u5b57\u6bb5",
         "detected_column": "\u8bc6\u522b\u5230\u7684\u5217\u540d",
         "column_notes": "\u5b57\u6bb5\u89e3\u91ca",
@@ -183,6 +187,12 @@ EXPLANATIONS = {
             "Action": "Recommended next business action.",
         },
         "Detected Columns": {"Field": "Internal field needed by the app.", "Detected Column": "Column name automatically matched from the uploaded Excel file."},
+        "Purchase Summary": {
+            "Year": "Calendar year being summarized.",
+            "Period": "Full year or year-to-date period.",
+            "Purchase Amount": "Total purchase amount from the uploaded Purchase / PO History file.",
+            "Record Count": "Number of purchase records included in that year.",
+        },
     },
     ZH: {
         "Final Analysis": {
@@ -234,6 +244,12 @@ EXPLANATIONS = {
             "Action": "\u5efa\u8bae\u4e0b\u4e00\u6b65\u4e1a\u52a1\u52a8\u4f5c\u3002",
         },
         "Detected Columns": {"Field": "\u7cfb\u7edf\u5185\u90e8\u9700\u8981\u8bc6\u522b\u7684\u5b57\u6bb5\u3002", "Detected Column": "\u4ece\u4e0a\u4f20 Excel \u4e2d\u81ea\u52a8\u5339\u914d\u5230\u7684\u5217\u540d\u3002"},
+        "Purchase Summary": {
+            "Year": "\u6c47\u603b\u7684\u81ea\u7136\u5e74\u3002",
+            "Period": "\u5168\u5e74\u6216\u5e74\u521d\u81f3\u4eca\u533a\u95f4\u3002",
+            "Purchase Amount": "\u4ece\u91c7\u8d2d / PO \u5386\u53f2\u6587\u4ef6\u4e2d\u6c47\u603b\u7684\u91c7\u8d2d\u91d1\u989d\u3002",
+            "Record Count": "\u8be5\u5e74\u5ea6\u5305\u542b\u7684\u91c7\u8d2d\u8bb0\u5f55\u6570\u3002",
+        },
     },
 }
 
@@ -359,6 +375,7 @@ def bp_generator_page(t: dict, language: str):
         sales_file = st.file_uploader(t["sales"], type=["xlsx", "xls"], key="sales")
         stock_file = st.file_uploader(t["stock"], type=["xlsx", "xls"], key="stock")
         catalogue_file = st.file_uploader(t["catalogue"], type=["xlsx", "xls"], key="catalogue")
+        purchase_file = st.file_uploader(t["purchase"], type=["xlsx", "xls"], key="purchase")
         brand_name = st.text_input(t["brand"], value="", placeholder="MilleFee / Judydoll / Joocyee")
         generate = st.button(t["generate"], type="primary", use_container_width=True)
 
@@ -373,6 +390,7 @@ def bp_generator_page(t: dict, language: str):
                     load_file(sales_file),
                     load_file(stock_file),
                     load_file(catalogue_file),
+                    load_file(purchase_file),
                     brand_name=clean_brand_name(brand_name),
                 )
             except Exception as exc:
@@ -401,6 +419,13 @@ def bp_generator_page(t: dict, language: str):
         metric_card(t["overstock"], f"{insights['overstock_count']:,}")
 
     st.divider()
+    if result.purchase_summary is not None:
+        st.subheader(t["purchase_summary"])
+        show_column_notes(language, "Purchase Summary")
+        purchase_view = result.purchase_summary.copy()
+        purchase_view["Purchase Amount"] = purchase_view["Purchase Amount"].map(lambda x: f"{x:,.2f}")
+        st.dataframe(purchase_view, use_container_width=True, hide_index=True)
+
     download_cols = st.columns(2)
     output_brand = clean_brand_name(brand_name)
     with download_cols[0]:

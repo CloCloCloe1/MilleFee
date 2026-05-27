@@ -4,6 +4,7 @@ import math
 import re
 import tempfile
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
@@ -42,6 +43,7 @@ class AnalysisResult:
     inventory_status_summary: pd.DataFrame
     action_summary: pd.DataFrame
     matrix: pd.DataFrame
+    purchase_summary: pd.DataFrame | None
     insights: dict
     detected_columns: dict
 
@@ -363,14 +365,92 @@ def apply_lifecycle_strategy(final: pd.DataFrame) -> pd.DataFrame:
     return work
 
 
+def build_purchase_summary(purchase_file: str | Path | BinaryIO | BytesIO | None) -> tuple[pd.DataFrame | None, dict]:
+    if purchase_file is None:
+        return None, {}
+    df = read_excel_with_detected_header(purchase_file)
+    date_col = detect_column(
+        df,
+        ["PO Date", "Purchase Date", "Order Date", "Invoice Date", "Date", "Created At", "Month, Year"],
+        required=False,
+    )
+    year_col = detect_column(df, ["Year", "Purchase Year", "PO Year"], required=False)
+    amount_col = detect_column(
+        df,
+        ["Purchase Amount", "Amount", "Total Amount", "Total", "Grand Total", "Subtotal", "Total without taxes", "Net Amount"],
+        required=False,
+    )
+    qty_col = detect_column(df, ["Quantity", "Qty", "Order Qty", "Purchase Qty", "Units"], required=False)
+    unit_cost_col = detect_column(
+        df,
+        ["Unit Cost", "Unit Price", "Wholesale Price", "Cost", "Price", "FOB", "Purchase Price"],
+        required=False,
+    )
+
+    detected = {
+        "purchase_date": date_col or "Not detected",
+        "purchase_year": year_col or "Not detected",
+        "purchase_amount": amount_col or "Not detected",
+        "purchase_qty": qty_col or "Not detected",
+        "purchase_unit_cost": unit_cost_col or "Not detected",
+    }
+
+    if amount_col is None and not (qty_col and unit_cost_col):
+        raise ValueError("Purchase report needs an Amount column, or both Qty and Unit Cost columns.")
+    if date_col is None and year_col is None:
+        raise ValueError("Purchase report needs a Date/PO Date column or a Year column.")
+
+    work = df.copy()
+    if date_col:
+        work["_date"] = pd.to_datetime(work[date_col], errors="coerce")
+        work["_year"] = work["_date"].dt.year
+    else:
+        work["_date"] = pd.NaT
+        work["_year"] = pd.to_numeric(work[year_col], errors="coerce")
+
+    if amount_col:
+        work["_purchase_amount"] = pd.to_numeric(work[amount_col], errors="coerce").fillna(0)
+    else:
+        work["_purchase_amount"] = (
+            pd.to_numeric(work[qty_col], errors="coerce").fillna(0)
+            * pd.to_numeric(work[unit_cost_col], errors="coerce").fillna(0)
+        )
+
+    current_year = datetime.now().year
+    current_date = pd.Timestamp(datetime.now().date())
+    rows = []
+    for year in [2024, 2025, 2026]:
+        subset = work[work["_year"] == year].copy()
+        if year == current_year and date_col:
+            subset = subset[subset["_date"].isna() | (subset["_date"] <= current_date)]
+            period = f"{year} YTD through {current_date.date()}"
+        elif year == current_year:
+            period = f"{year} YTD"
+        else:
+            period = f"{year} full year"
+        rows.append(
+            {
+                "Year": year,
+                "Period": period,
+                "Purchase Amount": float(subset["_purchase_amount"].sum()),
+                "Record Count": int(len(subset)),
+            }
+        )
+    summary = pd.DataFrame(rows)
+    detected["purchase_total_records"] = len(work)
+    return summary, detected
+
+
 def build_analysis(
     sales_file: str | Path | BinaryIO | BytesIO,
     stock_file: str | Path | BinaryIO | BytesIO,
     catalogue_file: str | Path | BinaryIO | BytesIO | None = None,
+    purchase_file: str | Path | BinaryIO | BytesIO | None = None,
 ) -> AnalysisResult:
     sales_df = read_excel_any(sales_file)
     stock_df = read_excel_any(stock_file)
     catalogue_df = read_excel_with_detected_header(catalogue_file) if catalogue_file else None
+    purchase_summary, purchase_cols = build_purchase_summary(purchase_file)
 
     sales, sales_cols = aggregate_sales(sales_df)
     stock, stock_cols = aggregate_stock(stock_df)
@@ -455,7 +535,10 @@ def build_analysis(
     matrix = matrix.reindex(index=["S", "A", "B", "C"], fill_value=0)
 
     insights = build_insights(final, sabc_summary, inventory_status_summary, action_summary)
-    return AnalysisResult(final, sabc_summary, inventory_status_summary, action_summary, matrix, insights, {**sales_cols, **stock_cols, **catalogue_cols})
+    if purchase_summary is not None:
+        insights["purchase_summary"] = purchase_summary
+        insights["purchase_total"] = float(purchase_summary["Purchase Amount"].sum())
+    return AnalysisResult(final, sabc_summary, inventory_status_summary, action_summary, matrix, purchase_summary, insights, {**sales_cols, **stock_cols, **catalogue_cols, **purchase_cols})
 
 
 def summarize(final: pd.DataFrame, group_col: str) -> pd.DataFrame:
@@ -683,6 +766,8 @@ def generate_excel(result: AnalysisResult) -> bytes:
         ("Action Summary", result.action_summary, "ActionSummaryTable", ["Qty Share"]),
         ("SABC x Inventory Status Matrix", result.matrix.reset_index(), "SABCMatrixTable", []),
     ]
+    if result.purchase_summary is not None:
+        sheets.append(("Purchase Summary", result.purchase_summary, "PurchaseSummaryTable", []))
     if result.insights.get("catalogue_present"):
         if "category_summary" in result.insights:
             sheets.append(("Category Summary", result.insights["category_summary"], "CategorySummaryTable", ["Qty Share"]))
@@ -951,6 +1036,8 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     add_key_value_paragraph(doc, "Stock Levels Report", "SKU-level available stock, incoming stock, and on-hand inventory when available.")
     if any(k.startswith("catalogue_") for k in result.detected_columns):
         add_key_value_paragraph(doc, "Optional Catalogue", "Catalogue fields were linked by SKU and added to the final analysis, including category, lifecycle status, pricing, case pack, margin, and MOQ risk when available.")
+    if result.purchase_summary is not None:
+        add_key_value_paragraph(doc, "Optional Purchase / PO History", "Purchase amount was summarized by year for 2024, 2025, and 2026 year-to-date.")
 
     doc.add_heading("Excel Column Explanation", level=1)
     explanation = pd.DataFrame(
@@ -984,6 +1071,13 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     add_table(doc, result.inventory_status_summary, max_rows=10)
     status_png = make_bar_chart_png(result.inventory_status_summary, "Inventory Status", "SKU_Count", "Inventory Status by SKU Count")
     doc.add_picture(status_png, width=Inches(6.5))
+
+    if result.purchase_summary is not None:
+        doc.add_heading("Purchase Amount by Year", level=1)
+        doc.add_paragraph(
+            "This section summarizes total purchase amount by calendar year. 2026 is calculated as year-to-date based on the uploaded purchase dates."
+        )
+        add_table(doc, result.purchase_summary, max_rows=10)
 
     if has_catalogue:
         add_catalogue_report_sections(doc, insights)
@@ -1047,7 +1141,8 @@ def generate_outputs(
     sales_file: str | Path | BinaryIO | BytesIO,
     stock_file: str | Path | BinaryIO | BytesIO,
     catalogue_file: str | Path | BinaryIO | BytesIO | None = None,
+    purchase_file: str | Path | BinaryIO | BytesIO | None = None,
     brand_name: str = "Brand",
 ) -> tuple[AnalysisResult, bytes, bytes]:
-    result = build_analysis(sales_file, stock_file, catalogue_file)
+    result = build_analysis(sales_file, stock_file, catalogue_file, purchase_file)
     return result, generate_excel(result), generate_word_report(result, brand_name=brand_name)
