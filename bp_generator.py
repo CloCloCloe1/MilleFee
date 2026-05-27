@@ -105,6 +105,18 @@ def margin_series(series: pd.Series) -> pd.Series:
     return margin.where(margin.abs() <= 1, margin / 100)
 
 
+def apply_sales_margin_column(df: pd.DataFrame) -> pd.DataFrame:
+    margin = pd.Series(np.nan, index=df.index, dtype="float64")
+    if {SALES_AMOUNT_COL, PROFIT_COL}.issubset(df.columns):
+        sales_amount = pd.to_numeric(df[SALES_AMOUNT_COL], errors="coerce")
+        profit = pd.to_numeric(df[PROFIT_COL], errors="coerce")
+        margin = pd.Series(np.where(sales_amount > 0, profit / sales_amount, np.nan), index=df.index)
+    if "_margin_avg" in df.columns:
+        margin = margin.fillna(pd.to_numeric(df["_margin_avg"], errors="coerce"))
+    df[SALES_MARGIN_COL] = margin
+    return df
+
+
 def first_existing_column(columns: Iterable[str], aliases: Iterable[str]) -> str | None:
     normalized = {normalize_header(c): c for c in columns}
     for alias in aliases:
@@ -330,10 +342,7 @@ def aggregate_sales(
         .drop(columns=["_sku"], errors="ignore")
         .sort_values("Qty", ascending=False)
     )
-    if {SALES_AMOUNT_COL, PROFIT_COL}.issubset(grouped.columns):
-        grouped[SALES_MARGIN_COL] = np.where(grouped[SALES_AMOUNT_COL] > 0, grouped[PROFIT_COL] / grouped[SALES_AMOUNT_COL], np.nan)
-    elif "_margin_avg" in grouped.columns:
-        grouped[SALES_MARGIN_COL] = grouped["_margin_avg"]
+    grouped = apply_sales_margin_column(grouped)
     grouped = grouped.drop(columns=["_margin_avg"], errors="ignore")
     sales_year_summary = None
     annual = None
@@ -371,16 +380,7 @@ def aggregate_sales(
             sales_year_summary[SALES_AMOUNT_COL] = np.nan
         if PROFIT_COL not in sales_year_summary.columns:
             sales_year_summary[PROFIT_COL] = np.nan
-        if {SALES_AMOUNT_COL, PROFIT_COL}.issubset(sales_year_summary.columns):
-            sales_year_summary[SALES_MARGIN_COL] = np.where(
-                sales_year_summary[SALES_AMOUNT_COL] > 0,
-                sales_year_summary[PROFIT_COL] / sales_year_summary[SALES_AMOUNT_COL],
-                np.nan,
-            )
-        elif "_margin_avg" in sales_year_summary.columns:
-            sales_year_summary[SALES_MARGIN_COL] = sales_year_summary["_margin_avg"]
-        else:
-            sales_year_summary[SALES_MARGIN_COL] = np.nan
+        sales_year_summary = apply_sales_margin_column(sales_year_summary)
         sales_year_summary = sales_year_summary.drop(columns=["_margin_avg"], errors="ignore")
 
     current_sales_year = None
@@ -400,10 +400,7 @@ def aggregate_sales(
             .drop(columns=["_sku"], errors="ignore")
             .sort_values("Qty", ascending=False)
         )
-        if {SALES_AMOUNT_COL, PROFIT_COL}.issubset(grouped.columns):
-            grouped[SALES_MARGIN_COL] = np.where(grouped[SALES_AMOUNT_COL] > 0, grouped[PROFIT_COL] / grouped[SALES_AMOUNT_COL], np.nan)
-        elif "_margin_avg" in grouped.columns:
-            grouped[SALES_MARGIN_COL] = grouped["_margin_avg"]
+        grouped = apply_sales_margin_column(grouped)
         grouped = grouped.drop(columns=["_margin_avg"], errors="ignore")
 
     sales_location_summary = None
@@ -431,16 +428,7 @@ def aggregate_sales(
             sales_location_summary[SALES_AMOUNT_COL] = np.nan
         if PROFIT_COL not in sales_location_summary.columns:
             sales_location_summary[PROFIT_COL] = np.nan
-        if {SALES_AMOUNT_COL, PROFIT_COL}.issubset(sales_location_summary.columns):
-            sales_location_summary[SALES_MARGIN_COL] = np.where(
-                sales_location_summary[SALES_AMOUNT_COL] > 0,
-                sales_location_summary[PROFIT_COL] / sales_location_summary[SALES_AMOUNT_COL],
-                np.nan,
-            )
-        elif "_margin_avg" in sales_location_summary.columns:
-            sales_location_summary[SALES_MARGIN_COL] = sales_location_summary["_margin_avg"]
-        else:
-            sales_location_summary[SALES_MARGIN_COL] = np.nan
+        sales_location_summary = apply_sales_margin_column(sales_location_summary)
         sales_location_summary = sales_location_summary.drop(columns=["_margin_avg"], errors="ignore")
 
     sales_year_location_summary = None
@@ -472,16 +460,7 @@ def aggregate_sales(
             sales_year_location_summary[SALES_AMOUNT_COL] = np.nan
         if PROFIT_COL not in sales_year_location_summary.columns:
             sales_year_location_summary[PROFIT_COL] = np.nan
-        if {SALES_AMOUNT_COL, PROFIT_COL}.issubset(sales_year_location_summary.columns):
-            sales_year_location_summary[SALES_MARGIN_COL] = np.where(
-                sales_year_location_summary[SALES_AMOUNT_COL] > 0,
-                sales_year_location_summary[PROFIT_COL] / sales_year_location_summary[SALES_AMOUNT_COL],
-                np.nan,
-            )
-        elif "_margin_avg" in sales_year_location_summary.columns:
-            sales_year_location_summary[SALES_MARGIN_COL] = sales_year_location_summary["_margin_avg"]
-        else:
-            sales_year_location_summary[SALES_MARGIN_COL] = np.nan
+        sales_year_location_summary = apply_sales_margin_column(sales_year_location_summary)
         sales_year_location_summary = sales_year_location_summary.drop(columns=["_margin_avg"], errors="ignore")
 
     sales_top_sku_by_year = None
@@ -491,9 +470,10 @@ def aggregate_sales(
             top_aggs[SALES_AMOUNT_COL] = ("_sales_amount", "sum")
         if "_profit" in annual.columns:
             top_aggs[PROFIT_COL] = ("_profit", "sum")
+        if "_sales_margin_raw" in annual.columns:
+            top_aggs["_margin_avg"] = ("_sales_margin_raw", "mean")
         top_base = annual.groupby(["_year", "_sku"], as_index=False).agg(**top_aggs)
-        if {SALES_AMOUNT_COL, PROFIT_COL}.issubset(top_base.columns):
-            top_base[SALES_MARGIN_COL] = np.where(top_base[SALES_AMOUNT_COL] > 0, top_base[PROFIT_COL] / top_base[SALES_AMOUNT_COL], np.nan)
+        top_base = apply_sales_margin_column(top_base).drop(columns=["_margin_avg"], errors="ignore")
         top_base["Rank"] = top_base.groupby("_year")["Qty"].rank(method="first", ascending=False).astype(int)
         top_cols = ["Year", "Rank", "Product SKU", "Product Name", "Qty", SALES_AMOUNT_COL, PROFIT_COL, SALES_MARGIN_COL]
         sales_top_sku_by_year = (
