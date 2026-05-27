@@ -2045,6 +2045,7 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
     final_match = final_match.rename(
         columns={
             "Product SKU": "_match_sku",
+            "SABC Type": "SABC Type (2026)",
             "Available": "Available (2026)",
             "Incoming": "Incoming (2026)",
             "On Hand": "On Hand (2026)",
@@ -2088,7 +2089,7 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
             f"{year} PO Cost ($ CAD)",
         ]
     ordered_new_cols += [
-        "SABC Type",
+        "SABC Type (2026)",
         "Available (2026)",
         "Incoming (2026)",
         "On Hand (2026)",
@@ -2135,7 +2136,7 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
         cell.font = copy(header_style_source.font)
         cell.fill = copy(header_style_source.fill)
         cell.border = copy(header_style_source.border)
-        cell.alignment = copy(header_style_source.alignment)
+        cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
         if has_subheader:
             sub_cell = ws.cell(subheader_row, start_col + offset, "")
             if subheader_style_source.has_style:
@@ -2143,7 +2144,7 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
             sub_cell.font = copy(subheader_style_source.font)
             sub_cell.fill = copy(subheader_style_source.fill)
             sub_cell.border = copy(subheader_style_source.border)
-            sub_cell.alignment = copy(subheader_style_source.alignment)
+            sub_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
         ws.column_dimensions[get_column_letter(start_col + offset)].width = min(max(len(str(col_name)) + 2, 14), 24)
 
     for row_idx in range(header_row + 1, ws.max_row + 1):
@@ -2158,6 +2159,7 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
             style_source = ws.cell(row_idx, start_col - 1)
             if style_source.has_style:
                 cell._style = copy(style_source._style)
+            cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
             if "Margin %" in str(col_name):
                 cell.number_format = "0.0%"
             elif "($ CAD)" in str(col_name) or "PO Cost" in str(col_name):
