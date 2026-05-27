@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import re
 import tempfile
+import unicodedata
 from copy import copy
 from dataclasses import dataclass
 from datetime import datetime
@@ -70,6 +71,27 @@ class AnalysisResult:
 
 def normalize_header(value: object) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value).strip().lower())
+
+
+def normalize_match_text(value: object) -> str:
+    text = "" if pd.isna(value) else str(value)
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.lower()
+    text = re.sub(r"\b(millefee|tester|display|new logo)\b", " ", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def variant_number(value: object) -> str:
+    match = re.search(r"\b(\d{1,3})\b", normalize_match_text(value))
+    if not match:
+        return ""
+    return match.group(1).lstrip("0") or "0"
+
+
+def product_tokens(value: object) -> set[str]:
+    return {token for token in normalize_match_text(value).split() if len(token) >= 3 and not token.isdigit()}
 
 
 def normalize_sku(value: object) -> str:
@@ -2025,6 +2047,9 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
     pandas_source, workbook_source = materialize_excel_source(catalogue_file)
     catalogue_df = read_excel_with_detected_header(pandas_source)
     sku_col = detect_column(catalogue_df, ["Product SKU", "SKU", "JAN", "Barcode", "Product Code", "Product Code Product Code", "Code"], label="Catalogue SKU")
+    catalogue_product_col = detect_column(catalogue_df, ["Product name", "Product Name", "Product / Service", "Name", "Description"], required=False)
+    catalogue_color_col = detect_column(catalogue_df, ["Color name", "Color Name", "Shade", "Shade Name", "Color"], required=False)
+    catalogue_recommendation_col = detect_column(catalogue_df, ["Recommendation / Lifecycle Status", "Lifecycle Status", "Recommendation", "Status"], required=False)
     enriched = catalogue_df.copy()
     enriched["_match_sku"] = enriched[sku_col].map(normalize_sku)
 
@@ -2040,7 +2065,6 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
         "Inventory Status",
         "Action",
     ]
-    final_cols += [col for col in ["2024 PO Cost ($ CAD)", "2025 PO Cost ($ CAD)", "2026 PO Cost ($ CAD)", TOTAL_PO_COST_COL] if col in result.final.columns]
     final_match = result.final[[col for col in final_cols if col in result.final.columns]].copy()
     final_match = final_match.rename(
         columns={
@@ -2066,6 +2090,7 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
         enriched = enriched.merge(sales_year_match, on="_match_sku", how="left")
 
     purchase_sku_summary = result.purchase_sku_summary
+    purchase_match = None
     if purchase_sku_summary is not None and not purchase_sku_summary.empty:
         purchase_match = purchase_sku_summary.copy()
         purchase_sku_col = detect_column(purchase_match, ["SKU", "Product SKU", "Item SKU", "JAN", "Barcode", "Product Code"], required=False)
@@ -2074,10 +2099,129 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
             purchase_cols = ["_match_sku"] + [
                 col
                 for col in purchase_match.columns
-                if re.fullmatch(r"20(24|25|26) Purchase Qty", str(col))
+                if re.fullmatch(r"20(24|25|26) (Purchase Qty|PO Cost \(\$ CAD\))", str(col))
             ]
             purchase_match = purchase_match[purchase_cols].drop_duplicates("_match_sku")
             enriched = enriched.merge(purchase_match, on="_match_sku", how="left")
+
+    sales_sku_lookup = None
+    if isinstance(sales_sku_year_summary, pd.DataFrame) and not sales_sku_year_summary.empty:
+        sales_sku_lookup = sales_sku_year_summary.copy()
+        sales_sku_lookup["_match_sku"] = sales_sku_lookup["Product SKU"].map(normalize_sku)
+        sales_sku_lookup["_match_name"] = sales_sku_lookup["Product Name"].map(normalize_match_text)
+        sales_sku_lookup["_variant"] = sales_sku_lookup["Product Name"].map(variant_number)
+        sales_sku_lookup["_auxiliary_sku"] = sales_sku_lookup["Product Name"].astype(str).str.contains("tester|display", case=False, na=False)
+    final_lookup = result.final.copy()
+    final_lookup["_match_sku"] = final_lookup["Product SKU"].map(normalize_sku)
+    final_lookup["_match_name"] = final_lookup["Product Name"].map(normalize_match_text)
+    final_lookup["_variant"] = final_lookup["Product Name"].map(variant_number)
+    purchase_lookup = None
+    if purchase_match is not None and "_match_sku" in purchase_match.columns:
+        purchase_lookup = purchase_match.set_index("_match_sku")
+
+    def catalogue_row_matched_skus(row: pd.Series) -> list[str]:
+        matched = []
+        exact = row.get("_match_sku", "")
+        if exact:
+            matched.append(exact)
+        if not catalogue_product_col or sales_sku_lookup is None:
+            return list(dict.fromkeys(matched))
+        product = row.get(catalogue_product_col, "")
+        color = row.get(catalogue_color_col, "") if catalogue_color_col else ""
+        tokens = product_tokens(product)
+        variant = variant_number(color) or variant_number(product)
+        if len(tokens) < 2 or not variant:
+            return list(dict.fromkeys(matched))
+        mask = sales_sku_lookup["_variant"].eq(variant) & (~sales_sku_lookup["_auxiliary_sku"])
+        for token in tokens:
+            mask = mask & sales_sku_lookup["_match_name"].str.contains(rf"\b{re.escape(token)}\b", regex=True, na=False)
+        for sku in sales_sku_lookup.loc[mask, "_match_sku"].tolist():
+            if sku:
+                matched.append(sku)
+        return list(dict.fromkeys(matched))
+
+    status_order = {"Stockout": 0, "Urgent": 1, "Healthy": 2, "Monitor": 3, "Overstock": 4, "No Sales / Review": 5}
+    sabc_order = {"S": 0, "A": 1, "B": 2, "C": 3}
+    for idx, row in enriched.iterrows():
+        matched_skus = catalogue_row_matched_skus(row)
+        if not matched_skus:
+            continue
+        enriched.at[idx, "Matched Sales SKUs"] = "; ".join(matched_skus)
+        if sales_sku_lookup is not None:
+            sales_rows = sales_sku_lookup[sales_sku_lookup["_match_sku"].isin(matched_skus)]
+            for year in [2024, 2025, 2026]:
+                qty_col = f"{year} Sales Qty"
+                profit_col = f"{year} Profit ($ CAD)"
+                margin_col = f"{year} Sales Margin %"
+                if qty_col in sales_rows.columns:
+                    year_qty = pd.to_numeric(sales_rows[qty_col], errors="coerce").fillna(0)
+                    enriched.at[idx, qty_col] = float(year_qty.sum())
+                if profit_col in sales_rows.columns:
+                    enriched.at[idx, profit_col] = float(pd.to_numeric(sales_rows[profit_col], errors="coerce").fillna(0).sum())
+                if margin_col in sales_rows.columns:
+                    margin = pd.to_numeric(sales_rows[margin_col], errors="coerce")
+                    weights = pd.to_numeric(sales_rows[qty_col], errors="coerce").fillna(0) if qty_col in sales_rows.columns else pd.Series(1, index=sales_rows.index)
+                    valid = margin.notna() & (weights > 0)
+                    enriched.at[idx, margin_col] = float(np.average(margin[valid], weights=weights[valid])) if valid.any() else 0
+        final_rows = final_lookup[final_lookup["_match_sku"].isin(matched_skus)]
+        if not final_rows.empty:
+            for source, target in [
+                ("Available", "Available (2026)"),
+                ("Incoming", "Incoming (2026)"),
+                ("On Hand", "On Hand (2026)"),
+                ("Future Inventory", "Future Inventory (2026)"),
+            ]:
+                if source in final_rows.columns:
+                    enriched.at[idx, target] = float(pd.to_numeric(final_rows[source], errors="coerce").fillna(0).sum())
+            sales_qty_2026 = float(enriched.at[idx, "2026 Sales Qty"]) if "2026 Sales Qty" in enriched.columns and pd.notna(enriched.at[idx, "2026 Sales Qty"]) else 0
+            avg_monthly = sales_qty_2026 / 12
+            future_inventory = float(enriched.at[idx, "Future Inventory (2026)"]) if "Future Inventory (2026)" in enriched.columns and pd.notna(enriched.at[idx, "Future Inventory (2026)"]) else 0
+            coverage = future_inventory / avg_monthly if avg_monthly > 0 else np.nan
+            enriched.at[idx, "Avg Monthly Sales (2026)"] = avg_monthly
+            enriched.at[idx, "Coverage (2026)"] = coverage
+            sabc_values = [value for value in final_rows["SABC Type"].dropna().astype(str) if value in sabc_order]
+            if sabc_values:
+                enriched.at[idx, "SABC Type (2026)"] = min(sabc_values, key=lambda value: sabc_order[value])
+            if avg_monthly <= 0:
+                status = "No Sales / Review"
+            elif future_inventory <= 0:
+                status = "Stockout"
+            elif coverage < 1:
+                status = "Urgent"
+            elif coverage < 3:
+                status = "Healthy"
+            elif coverage < 6:
+                status = "Monitor"
+            else:
+                status = "Overstock"
+            enriched.at[idx, "Inventory Status (2026)"] = status
+            action = {
+                "Stockout": "Immediate Replenishment",
+                "Urgent": "Replenish",
+                "Healthy": "Monitor",
+                "Monitor": "Review PO",
+                "Overstock": "Reduce PO",
+                "No Sales / Review": "Review SKU",
+            }.get(status, "Review SKU")
+            if catalogue_recommendation_col:
+                lifecycle = classify_lifecycle_status(row.get(catalogue_recommendation_col, ""))
+                if lifecycle == "Discontinued / Phase Out":
+                    action = "Stop PO / Phase Out" if sales_qty_2026 > 0 else "Do Not Launch / Archive"
+                elif lifecycle == "New / Coming Soon":
+                    action = "Launch Plan / Initial PO"
+                elif lifecycle == "Display Low Stock":
+                    action = "Request Display Support"
+                elif lifecycle == "Display No Stock":
+                    action = "Urgent Display Support"
+                elif lifecycle == "Renewal":
+                    action = "Version Transition Plan"
+            enriched.at[idx, "Action (2026)"] = action
+        if purchase_lookup is not None:
+            matched_purchase = purchase_lookup[purchase_lookup.index.isin(matched_skus)]
+            for year in [2024, 2025, 2026]:
+                for col in [f"{year} Purchase Qty", f"{year} PO Cost ($ CAD)"]:
+                    if col in matched_purchase.columns:
+                        enriched.at[idx, col] = float(pd.to_numeric(matched_purchase[col], errors="coerce").fillna(0).sum())
 
     ordered_new_cols = []
     for year in [2024, 2025, 2026]:
@@ -2089,6 +2233,7 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
             f"{year} PO Cost ($ CAD)",
         ]
     ordered_new_cols += [
+        "Matched Sales SKUs",
         "SABC Type (2026)",
         "Available (2026)",
         "Incoming (2026)",
