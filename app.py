@@ -27,7 +27,7 @@ TEXT = {
         "purchase_2024": "Upload 2024 PO with lines",
         "purchase_2025": "Upload 2025 PO with lines",
         "purchase_2026": "Upload 2026 YTD PO with lines",
-        "purchase_keyword": "Purchase filter keyword",
+        "purchase_keyword": "Brand / product filter keyword",
         "brand": "Brand name",
         "generate": "Generate Analysis",
         "missing_files": "Upload the Sales Report and Stock Levels Report to begin.",
@@ -55,6 +55,9 @@ TEXT = {
         "purchase_summary": "Purchase Summary",
         "purchase_sku_summary": "Purchase by SKU",
         "purchase_location_summary": "Purchase by Location",
+        "location_year_view": "Year + Location Business View",
+        "sales_location_summary": "Sales by Location",
+        "stock_location_summary": "Stock by Location",
         "field": "Field",
         "detected_column": "Detected Column",
         "column_notes": "Column explanation",
@@ -92,7 +95,7 @@ TEXT = {
         "purchase_2024": "\u4e0a\u4f20 2024 PO with lines",
         "purchase_2025": "\u4e0a\u4f20 2025 PO with lines",
         "purchase_2026": "\u4e0a\u4f20 2026 YTD PO with lines",
-        "purchase_keyword": "\u91c7\u8d2d\u7b5b\u9009\u5173\u952e\u8bcd",
+        "purchase_keyword": "\u54c1\u724c / \u4ea7\u54c1\u7b5b\u9009\u5173\u952e\u8bcd",
         "brand": "\u54c1\u724c\u540d\u79f0",
         "generate": "\u751f\u6210\u5206\u6790",
         "missing_files": "\u8bf7\u5148\u4e0a\u4f20\u9500\u552e\u62a5\u8868\u548c\u5e93\u5b58\u62a5\u8868\u3002",
@@ -120,6 +123,9 @@ TEXT = {
         "purchase_summary": "\u91c7\u8d2d\u91d1\u989d\u6c47\u603b",
         "purchase_sku_summary": "\u6309 SKU \u6c47\u603b\u91c7\u8d2d\u91d1\u989d",
         "purchase_location_summary": "\u6309 Location \u6c47\u603b\u91c7\u8d2d\u91d1\u989d",
+        "location_year_view": "\u6309\u5e74\u4efd + Location \u7684\u7efc\u5408\u89c6\u56fe",
+        "sales_location_summary": "\u6309 Location \u6c47\u603b\u9500\u552e",
+        "stock_location_summary": "\u6309 Location \u6c47\u603b\u5e93\u5b58",
         "field": "\u5b57\u6bb5",
         "detected_column": "\u8bc6\u522b\u5230\u7684\u5217\u540d",
         "column_notes": "\u5b57\u6bb5\u89e3\u91ca",
@@ -222,6 +228,27 @@ EXPLANATIONS = {
             "Record Count": "Number of PO lines included for this location.",
             "2024/2025/2026 Purchase Amount": "Purchase amount by uploaded PO year for this location.",
         },
+        "Year Location View": {
+            "Year": "Uploaded or detected calendar year.",
+            "Location": "Location detected from Sales, Stock, or PO files.",
+            "Sales Qty": "Sales quantity in this year and location when Sales Report includes date and location.",
+            "Sales Amount": "Sales amount in this year and location when a sales amount column is available.",
+            "Purchase Amount": "PO purchase amount in this year and location after applying the brand keyword filter.",
+            "Available / Incoming / On Hand / Future Inventory": "Current stock values by location. Stock is current, not historical by year.",
+        },
+        "Sales by Location": {
+            "Location": "Sales location detected from the Sales Report.",
+            "SKU Count": "Number of selling SKUs in this location.",
+            "Qty": "Latest available 12-month sales quantity in this location.",
+            "Sales Amount": "Latest available 12-month sales amount in this location when available.",
+        },
+        "Stock by Location": {
+            "Location": "Stock or warehouse location detected from the Stock Levels Report.",
+            "SKU Count": "Number of SKUs with stock records in this location.",
+            "Available": "Current available stock in this location.",
+            "Incoming": "Incoming inventory for this location.",
+            "Future Inventory": "Available + Incoming for this location.",
+        },
     },
     ZH: {
         "Final Analysis": {
@@ -295,6 +322,27 @@ EXPLANATIONS = {
             "Purchase Amount": "\u5957\u7528\u54c1\u724c\u5173\u952e\u8bcd\u7b5b\u9009\u540e\uff0c\u8be5 location \u7684\u91c7\u8d2d\u91d1\u989d\u5408\u8ba1\u3002",
             "Record Count": "\u8be5 location \u5305\u542b\u7684 PO lines \u6570\u91cf\u3002",
             "2024/2025/2026 Purchase Amount": "\u8be5 location \u6309\u4e0a\u4f20\u5e74\u4efd\u62c6\u5206\u7684\u91c7\u8d2d\u91d1\u989d\u3002",
+        },
+        "Year Location View": {
+            "Year": "\u4e0a\u4f20\u65f6\u6807\u8bb0\u6216\u6587\u4ef6\u4e2d\u8bc6\u522b\u5230\u7684\u81ea\u7136\u5e74\u3002",
+            "Location": "\u4ece Sales\u3001Stock \u6216 PO \u6587\u4ef6\u4e2d\u8bc6\u522b\u5230\u7684 location\u3002",
+            "Sales Qty": "\u5982 Sales Report \u6709\u65e5\u671f\u548c location\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u9500\u91cf\u3002",
+            "Sales Amount": "\u5982 Sales Report \u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u9500\u552e\u91d1\u989d\u3002",
+            "Purchase Amount": "\u5957\u7528\u54c1\u724c\u5173\u952e\u8bcd\u7b5b\u9009\u540e\uff0c\u8be5\u5e74 + location \u7684 PO \u91c7\u8d2d\u91d1\u989d\u3002",
+            "Available / Incoming / On Hand / Future Inventory": "\u8be5 location \u7684\u5f53\u524d\u5e93\u5b58\u3002\u6ce8\u610f\uff1aStock \u662f\u5f53\u524d\u5e93\u5b58\uff0c\u4e0d\u662f\u5386\u53f2\u5e74\u5ea6\u5e93\u5b58\u3002",
+        },
+        "Sales by Location": {
+            "Location": "Sales Report \u4e2d\u8bc6\u522b\u5230\u7684\u9500\u552e location\u3002",
+            "SKU Count": "\u8be5 location \u6709\u9500\u552e\u7684 SKU \u6570\u91cf\u3002",
+            "Qty": "\u6700\u65b0\u53ef\u7528 12 \u4e2a\u6708\u5728\u8be5 location \u7684\u9500\u91cf\u3002",
+            "Sales Amount": "\u5982\u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u6700\u65b0 12 \u4e2a\u6708\u8be5 location \u7684\u9500\u552e\u91d1\u989d\u3002",
+        },
+        "Stock by Location": {
+            "Location": "Stock Levels Report \u4e2d\u8bc6\u522b\u5230\u7684\u5e93\u5b58 / \u4ed3\u5e93 location\u3002",
+            "SKU Count": "\u8be5 location \u6709\u5e93\u5b58\u8bb0\u5f55\u7684 SKU \u6570\u91cf\u3002",
+            "Available": "\u8be5 location \u5f53\u524d\u53ef\u7528\u5e93\u5b58\u3002",
+            "Incoming": "\u8be5 location \u7684\u5728\u9014 / \u5373\u5c06\u5165\u5e93\u5e93\u5b58\u3002",
+            "Future Inventory": "Available + Incoming\uff0c\u8be5 location \u7684\u672a\u6765\u5e93\u5b58\u9884\u4f30\u3002",
         },
     },
 }
@@ -496,6 +544,27 @@ def bp_generator_page(t: dict, language: str):
             for col in [c for c in location_view.columns if "Purchase Amount" in c]:
                 location_view[col] = location_view[col].map(lambda x: f"{x:,.2f}")
             st.dataframe(location_view, use_container_width=True, hide_index=True)
+    if result.location_year_business_view is not None and not result.location_year_business_view.empty:
+        st.subheader(t["location_year_view"])
+        show_column_notes(language, "Year Location View")
+        location_year_view = result.location_year_business_view.copy()
+        for col in [c for c in location_year_view.columns if "Amount" in c]:
+            location_year_view[col] = location_year_view[col].map(lambda x: f"{x:,.2f}")
+        st.dataframe(location_year_view, use_container_width=True, hide_index=True)
+    loc_cols = st.columns(2)
+    with loc_cols[0]:
+        if result.sales_location_summary is not None and not result.sales_location_summary.empty:
+            st.subheader(t["sales_location_summary"])
+            show_column_notes(language, "Sales by Location")
+            sales_loc_view = result.sales_location_summary.copy()
+            if "Sales Amount" in sales_loc_view:
+                sales_loc_view["Sales Amount"] = sales_loc_view["Sales Amount"].map(lambda x: f"{x:,.2f}")
+            st.dataframe(sales_loc_view, use_container_width=True, hide_index=True)
+    with loc_cols[1]:
+        if result.stock_location_summary is not None and not result.stock_location_summary.empty:
+            st.subheader(t["stock_location_summary"])
+            show_column_notes(language, "Stock by Location")
+            st.dataframe(result.stock_location_summary, use_container_width=True, hide_index=True)
 
     download_cols = st.columns(2)
     output_brand = clean_brand_name(brand_name)

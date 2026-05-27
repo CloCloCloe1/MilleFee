@@ -43,10 +43,15 @@ class AnalysisResult:
     inventory_status_summary: pd.DataFrame
     action_summary: pd.DataFrame
     matrix: pd.DataFrame
+    sales_location_summary: pd.DataFrame | None
+    sales_year_location_summary: pd.DataFrame | None
+    stock_location_summary: pd.DataFrame | None
     purchase_summary: pd.DataFrame | None
     purchase_sku_summary: pd.DataFrame | None
     purchase_location_summary: pd.DataFrame | None
+    purchase_year_location_summary: pd.DataFrame | None
     purchase_sku_location_summary: pd.DataFrame | None
+    location_year_business_view: pd.DataFrame | None
     insights: dict
     detected_columns: dict
 
@@ -217,13 +222,38 @@ def mode_or_first(series: pd.Series) -> str:
     return mode.iloc[0] if not mode.empty else cleaned.iloc[0]
 
 
-def aggregate_sales(sales_df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+def filter_by_keyword(df: pd.DataFrame, keyword: str, columns: list[str | None]) -> pd.DataFrame:
+    cleaned = keyword.strip()
+    if not cleaned:
+        return df.copy()
+    text_cols = [col for col in columns if col and col in df.columns]
+    if not text_cols:
+        return df.copy()
+    mask = pd.Series(False, index=df.index)
+    for col in text_cols:
+        mask = mask | df[col].astype(str).str.contains(cleaned, case=False, na=False)
+    return df[mask].copy()
+
+
+def clean_location(value: object) -> str:
+    if pd.isna(value):
+        return "Unassigned"
+    text = str(value).strip()
+    return text if text else "Unassigned"
+
+
+def aggregate_sales(sales_df: pd.DataFrame, filter_keyword: str = "") -> tuple[pd.DataFrame, pd.DataFrame | None, pd.DataFrame | None, dict]:
     sku_col = detect_column(sales_df, ["Product SKU", "SKU", "Product Code", "Item SKU", "Barcode"], label="Product SKU")
     name_col = detect_column(sales_df, ["Product / Service", "Product Name", "Name", "Item Name", "Description"], label="Product Name")
     qty_col = detect_column(sales_df, ["Quantity", "Qty", "Units", "Units Sold", "Sold Qty"], label="Quantity")
     date_col = detect_column(sales_df, ["Month, Year", "Month/Year", "Month Year", "Date", "Order Date"], required=False)
+    location_col = detect_column(sales_df, ["Location", "Warehouse", "Store", "Branch", "Sales Location", "Stock Location", "Outlet"], required=False)
+    amount_col = detect_column(sales_df, ["Total without taxes", "Net Sales", "Sales Amount", "Amount", "Revenue", "Total with taxes", "Total"], required=False)
+    barcode_col = detect_column(sales_df, ["Barcode", "JAN", "UPC", "EAN"], required=False)
+    brand_col = detect_column(sales_df, ["Brand", "Supplier", "Vendor"], required=False)
 
-    work = latest_12_months(sales_df, date_col)
+    filtered = filter_by_keyword(sales_df, filter_keyword, [name_col, sku_col, barcode_col, brand_col])
+    work = latest_12_months(filtered, date_col)
     work["_sku"] = work[sku_col].map(normalize_sku)
     work["_qty"] = pd.to_numeric(work[qty_col], errors="coerce").fillna(0)
     work = work[work["_sku"] != ""]
@@ -233,17 +263,66 @@ def aggregate_sales(sales_df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         .drop(columns=["_sku"], errors="ignore")
         .sort_values("Qty", ascending=False)
     )
-    return grouped, {"sales_sku": sku_col, "sales_name": name_col, "sales_qty": qty_col, "sales_date": date_col or "Not detected"}
+    sales_location_summary = None
+    if location_col:
+        loc = work.copy()
+        loc["_location"] = loc[location_col].map(clean_location)
+        aggregations = {"SKU Count": ("_sku", "nunique"), "Qty": ("_qty", "sum")}
+        if amount_col:
+            loc["_sales_amount"] = pd.to_numeric(loc[amount_col], errors="coerce").fillna(0)
+            aggregations["Sales Amount"] = ("_sales_amount", "sum")
+        sales_location_summary = (
+            loc.groupby("_location", dropna=False)
+            .agg(**aggregations)
+            .reset_index()
+            .rename(columns={"_location": "Location"})
+            .sort_values("Qty", ascending=False)
+        )
+
+    sales_year_location_summary = None
+    if date_col and location_col:
+        annual = filtered.copy()
+        annual[date_col] = pd.to_datetime(annual[date_col], errors="coerce")
+        annual["_year"] = annual[date_col].dt.year
+        annual["_location"] = annual[location_col].map(clean_location)
+        annual["_sku"] = annual[sku_col].map(normalize_sku)
+        annual["_qty"] = pd.to_numeric(annual[qty_col], errors="coerce").fillna(0)
+        annual = annual[(annual["_sku"] != "") & annual["_year"].notna()]
+        aggregations = {"SKU Count": ("_sku", "nunique"), "Sales Qty": ("_qty", "sum")}
+        if amount_col:
+            annual["_sales_amount"] = pd.to_numeric(annual[amount_col], errors="coerce").fillna(0)
+            aggregations["Sales Amount"] = ("_sales_amount", "sum")
+        sales_year_location_summary = (
+            annual.groupby(["_year", "_location"], dropna=False)
+            .agg(**aggregations)
+            .reset_index()
+            .rename(columns={"_year": "Year", "_location": "Location"})
+            .sort_values(["Year", "Sales Qty"], ascending=[False, False])
+        )
+        sales_year_location_summary["Year"] = sales_year_location_summary["Year"].astype(int)
+
+    return grouped, sales_location_summary, sales_year_location_summary, {
+        "sales_sku": sku_col,
+        "sales_name": name_col,
+        "sales_qty": qty_col,
+        "sales_date": date_col or "Not detected",
+        "sales_location": location_col or "Not detected",
+        "sales_amount": amount_col or "Not detected",
+        "sales_filter_keyword": filter_keyword or "Not used",
+    }
 
 
-def aggregate_stock(stock_df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+def aggregate_stock(stock_df: pd.DataFrame, filter_keyword: str = "") -> tuple[pd.DataFrame, pd.DataFrame | None, dict]:
     sku_col = detect_column(stock_df, ["Product SKU", "SKU", "Product Code", "Item SKU", "Barcode"], label="SKU")
     name_col = detect_column(stock_df, ["Product / Service", "Product Name", "Name", "Item Name", "Description"], required=False)
     available_col = detect_column(stock_df, ["Available", "Available Qty", "Available Stock"], required=False)
     incoming_col = detect_column(stock_df, ["Incoming", "Incoming Qty", "On Order"], required=False)
     on_hand_col = detect_column(stock_df, ["On Hand", "On hand", "Onhand", "Stock On Hand"], required=False)
+    location_col = detect_column(stock_df, ["Location", "Warehouse", "Store", "Branch", "Stock Location", "Receiving Location", "Outlet"], required=False)
+    barcode_col = detect_column(stock_df, ["Barcode", "JAN", "UPC", "EAN"], required=False)
+    brand_col = detect_column(stock_df, ["Brand", "Supplier", "Vendor"], required=False)
 
-    work = stock_df.copy()
+    work = filter_by_keyword(stock_df, filter_keyword, [name_col, sku_col, barcode_col, brand_col])
     work["_sku"] = work[sku_col].map(normalize_sku)
     work = work[work["_sku"] != ""]
     for col in [available_col, incoming_col, on_hand_col]:
@@ -258,12 +337,34 @@ def aggregate_stock(stock_df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     aggregations["On Hand"] = (on_hand_col, "sum") if on_hand_col else ("_sku", lambda _: 0)
     grouped = work.groupby("_sku", as_index=False).agg(**aggregations).drop(columns=["_sku"], errors="ignore")
 
-    return grouped, {
+    stock_location_summary = None
+    if location_col:
+        loc = work.copy()
+        loc["_location"] = loc[location_col].map(clean_location)
+        stock_location_summary = (
+            loc.groupby("_location", dropna=False)
+            .agg(
+                **{
+                    "SKU Count": ("_sku", "nunique"),
+                    "Available": (available_col, "sum") if available_col else ("_sku", lambda _: 0),
+                    "Incoming": (incoming_col, "sum") if incoming_col else ("_sku", lambda _: 0),
+                    "On Hand": (on_hand_col, "sum") if on_hand_col else ("_sku", lambda _: 0),
+                }
+            )
+            .reset_index()
+            .rename(columns={"_location": "Location"})
+        )
+        stock_location_summary["Future Inventory"] = stock_location_summary["Available"] + stock_location_summary["Incoming"]
+        stock_location_summary = stock_location_summary.sort_values("Future Inventory", ascending=False)
+
+    return grouped, stock_location_summary, {
         "stock_sku": sku_col,
         "stock_name": name_col or "Not detected",
         "stock_available": available_col or "Not detected",
         "stock_incoming": incoming_col or "Not detected",
         "stock_on_hand": on_hand_col or "Not detected",
+        "stock_location": location_col or "Not detected",
+        "stock_filter_keyword": filter_keyword or "Not used",
     }
 
 
@@ -375,9 +476,9 @@ def build_purchase_summary(
     purchase_file: str | Path | BinaryIO | BytesIO | list[str | Path | BinaryIO | BytesIO] | None,
     purchase_filter_keyword: str = "",
     purchase_years: list[int] | None = None,
-) -> tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, dict]:
+) -> tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, dict]:
     if purchase_file is None:
-        return None, None, None, {}
+        return None, None, None, None, None, None, {}
     files = purchase_file if isinstance(purchase_file, list) else [purchase_file]
     frames = []
     for idx, file in enumerate(files):
@@ -480,6 +581,7 @@ def build_purchase_summary(
     sku_summary = None
     purchase_key_summary = None
     location_summary = None
+    year_location_summary = None
     sku_location_summary = None
     if sku_col or product_col:
         group_cols = [c for c in [sku_col, product_col] if c]
@@ -511,14 +613,15 @@ def build_purchase_summary(
         sku_summary = sku_summary[[col for col in ordered_cols if col in sku_summary.columns]]
 
     if location_col:
+        work["_location"] = work[location_col].map(clean_location)
         location_summary = (
-            work.groupby(location_col, dropna=False)
+            work.groupby("_location", dropna=False)
             .agg(Purchase_Amount=("_purchase_amount", "sum"), Record_Count=("_purchase_amount", "count"))
             .reset_index()
-            .rename(columns={location_col: "Location", "Purchase_Amount": "Purchase Amount", "Record_Count": "Record Count"})
+            .rename(columns={"_location": "Location", "Purchase_Amount": "Purchase Amount", "Record_Count": "Record Count"})
             .sort_values("Purchase Amount", ascending=False)
         )
-        location_year = work.pivot_table(index=location_col, columns="_year", values="_purchase_amount", aggfunc="sum", fill_value=0).reset_index()
+        location_year = work.pivot_table(index="_location", columns="_year", values="_purchase_amount", aggfunc="sum", fill_value=0).reset_index()
         location_year.columns = [f"{int(col)} Purchase Amount" if isinstance(col, (int, float, np.integer, np.floating)) else "Location" for col in location_year.columns]
         location_summary = location_summary.merge(location_year, on="Location", how="left")
         for year in [2024, 2025, 2026]:
@@ -527,13 +630,28 @@ def build_purchase_summary(
                 location_summary[col] = 0
         location_summary = location_summary[["Location", "Purchase Amount", "Record Count", "2024 Purchase Amount", "2025 Purchase Amount", "2026 Purchase Amount"]]
 
+        aggregations = {"Purchase Amount": ("_purchase_amount", "sum"), "Record Count": ("_purchase_amount", "count")}
+        if qty_col:
+            work["_purchase_qty"] = pd.to_numeric(work[qty_col], errors="coerce").fillna(0)
+            aggregations["Purchase Qty"] = ("_purchase_qty", "sum")
+        year_location_summary = (
+            work[work["_year"].notna()]
+            .groupby(["_year", "_location"], dropna=False)
+            .agg(**aggregations)
+            .reset_index()
+            .rename(columns={"_year": "Year", "_location": "Location"})
+            .sort_values(["Year", "Purchase Amount"], ascending=[False, False])
+        )
+        if year_location_summary is not None and not year_location_summary.empty:
+            year_location_summary["Year"] = year_location_summary["Year"].astype(int)
+
         if sku_col or product_col:
-            sku_loc_group_cols = [c for c in [sku_col, product_col, location_col] if c]
+            sku_loc_group_cols = [c for c in [sku_col, product_col, "_location"] if c]
             sku_location_summary = (
                 work.groupby(sku_loc_group_cols, dropna=False)
                 .agg(Purchase_Amount=("_purchase_amount", "sum"), Record_Count=("_purchase_amount", "count"))
                 .reset_index()
-                .rename(columns={location_col: "Location", "Purchase_Amount": "Purchase Amount", "Record_Count": "Record Count"})
+                .rename(columns={"_location": "Location", "Purchase_Amount": "Purchase Amount", "Record_Count": "Record Count"})
                 .sort_values("Purchase Amount", ascending=False)
             )
 
@@ -558,7 +676,50 @@ def build_purchase_summary(
         purchase_key_summary["Total Purchase Amount"] = purchase_key_summary[[f"{year} Purchase Amount" for year in [2024, 2025, 2026]]].sum(axis=1)
     detected["purchase_total_records_before_filter"] = raw_records
     detected["purchase_total_records_after_filter"] = len(work)
-    return summary, sku_summary, purchase_key_summary, location_summary, sku_location_summary, detected
+    return summary, sku_summary, purchase_key_summary, location_summary, year_location_summary, sku_location_summary, detected
+
+
+def build_location_year_business_view(
+    sales_year_location_summary: pd.DataFrame | None,
+    stock_location_summary: pd.DataFrame | None,
+    purchase_year_location_summary: pd.DataFrame | None,
+) -> pd.DataFrame | None:
+    view = None
+    if sales_year_location_summary is not None and not sales_year_location_summary.empty:
+        sales_cols = ["Year", "Location", "Sales Qty"]
+        if "Sales Amount" in sales_year_location_summary.columns:
+            sales_cols.append("Sales Amount")
+        view = sales_year_location_summary[sales_cols].copy()
+    if purchase_year_location_summary is not None and not purchase_year_location_summary.empty:
+        po_cols = ["Year", "Location", "Purchase Amount", "Record Count"]
+        if "Purchase Qty" in purchase_year_location_summary.columns:
+            po_cols.append("Purchase Qty")
+        purchase_view = purchase_year_location_summary[po_cols].copy()
+        view = purchase_view if view is None else view.merge(purchase_view, on=["Year", "Location"], how="outer")
+    if view is None or view.empty:
+        return None
+    if stock_location_summary is not None and not stock_location_summary.empty:
+        stock_cols = ["Location", "Available", "Incoming", "On Hand", "Future Inventory"]
+        stock_cols = [col for col in stock_cols if col in stock_location_summary.columns]
+        view = view.merge(stock_location_summary[stock_cols], on="Location", how="left")
+    for col in ["Sales Qty", "Sales Amount", "Purchase Amount", "Purchase Qty", "Available", "Incoming", "On Hand", "Future Inventory"]:
+        if col in view.columns:
+            view[col] = pd.to_numeric(view[col], errors="coerce").fillna(0)
+    ordered = [
+        "Year",
+        "Location",
+        "Sales Qty",
+        "Sales Amount",
+        "Purchase Amount",
+        "Purchase Qty",
+        "Available",
+        "Incoming",
+        "On Hand",
+        "Future Inventory",
+        "Record Count",
+    ]
+    ordered = [col for col in ordered if col in view.columns]
+    return view[ordered].sort_values(["Year", "Location"], ascending=[False, True])
 
 
 def build_analysis(
@@ -572,12 +733,17 @@ def build_analysis(
     sales_df = read_excel_any(sales_file)
     stock_df = read_excel_any(stock_file)
     catalogue_df = read_excel_with_detected_header(catalogue_file) if catalogue_file else None
-    purchase_summary, purchase_sku_summary, purchase_key_summary, purchase_location_summary, purchase_sku_location_summary, purchase_cols = build_purchase_summary(
+    purchase_summary, purchase_sku_summary, purchase_key_summary, purchase_location_summary, purchase_year_location_summary, purchase_sku_location_summary, purchase_cols = build_purchase_summary(
         purchase_file, purchase_filter_keyword, purchase_years
     )
 
-    sales, sales_cols = aggregate_sales(sales_df)
-    stock, stock_cols = aggregate_stock(stock_df)
+    sales, sales_location_summary, sales_year_location_summary, sales_cols = aggregate_sales(sales_df, purchase_filter_keyword)
+    stock, stock_location_summary, stock_cols = aggregate_stock(stock_df, purchase_filter_keyword)
+    location_year_business_view = build_location_year_business_view(
+        sales_year_location_summary,
+        stock_location_summary,
+        purchase_year_location_summary,
+    )
 
     final = sales.merge(stock, on="Product SKU", how="outer")
     final["Qty"] = pd.to_numeric(final["Qty"], errors="coerce").fillna(0)
@@ -669,18 +835,32 @@ def build_analysis(
         insights["purchase_summary"] = purchase_summary
         insights["purchase_sku_summary"] = purchase_sku_summary
         insights["purchase_location_summary"] = purchase_location_summary
+        insights["purchase_year_location_summary"] = purchase_year_location_summary
         insights["purchase_sku_location_summary"] = purchase_sku_location_summary
         insights["purchase_total"] = float(purchase_summary["Purchase Amount"].sum())
+    if sales_location_summary is not None:
+        insights["sales_location_summary"] = sales_location_summary
+    if sales_year_location_summary is not None:
+        insights["sales_year_location_summary"] = sales_year_location_summary
+    if stock_location_summary is not None:
+        insights["stock_location_summary"] = stock_location_summary
+    if location_year_business_view is not None:
+        insights["location_year_business_view"] = location_year_business_view
     return AnalysisResult(
         final,
         sabc_summary,
         inventory_status_summary,
         action_summary,
         matrix,
+        sales_location_summary,
+        sales_year_location_summary,
+        stock_location_summary,
         purchase_summary,
         purchase_sku_summary,
         purchase_location_summary,
+        purchase_year_location_summary,
         purchase_sku_location_summary,
+        location_year_business_view,
         insights,
         {**sales_cols, **stock_cols, **catalogue_cols, **purchase_cols},
     )
@@ -911,12 +1091,22 @@ def generate_excel(result: AnalysisResult) -> bytes:
         ("Action Summary", result.action_summary, "ActionSummaryTable", ["Qty Share"]),
         ("SABC x Inventory Status Matrix", result.matrix.reset_index(), "SABCMatrixTable", []),
     ]
+    if result.location_year_business_view is not None and not result.location_year_business_view.empty:
+        sheets.append(("Year Location View", result.location_year_business_view, "YearLocationViewTable", []))
+    if result.sales_location_summary is not None and not result.sales_location_summary.empty:
+        sheets.append(("Sales by Location", result.sales_location_summary, "SalesByLocationTable", []))
+    if result.sales_year_location_summary is not None and not result.sales_year_location_summary.empty:
+        sheets.append(("Sales Year Location", result.sales_year_location_summary, "SalesYearLocationTable", []))
+    if result.stock_location_summary is not None and not result.stock_location_summary.empty:
+        sheets.append(("Stock by Location", result.stock_location_summary, "StockByLocationTable", []))
     if result.purchase_summary is not None:
         sheets.append(("Purchase Summary", result.purchase_summary, "PurchaseSummaryTable", []))
         if result.purchase_sku_summary is not None and not result.purchase_sku_summary.empty:
             sheets.append(("Purchase by SKU", result.purchase_sku_summary, "PurchaseBySKUTable", []))
         if result.purchase_location_summary is not None and not result.purchase_location_summary.empty:
             sheets.append(("Purchase by Location", result.purchase_location_summary, "PurchaseByLocationTable", []))
+        if result.purchase_year_location_summary is not None and not result.purchase_year_location_summary.empty:
+            sheets.append(("Purchase Year Location", result.purchase_year_location_summary, "PurchaseYearLocationTable", []))
         if result.purchase_sku_location_summary is not None and not result.purchase_sku_location_summary.empty:
             sheets.append(("Purchase SKU Location", result.purchase_sku_location_summary, "PurchaseSKULocationTable", []))
     if result.insights.get("catalogue_present"):
@@ -1189,6 +1379,8 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
         add_key_value_paragraph(doc, "Optional Catalogue", "Catalogue fields were linked by SKU and added to the final analysis, including category, lifecycle status, pricing, case pack, margin, and MOQ risk when available.")
     if result.purchase_summary is not None:
         add_key_value_paragraph(doc, "Optional Purchase / PO History", "Purchase amount was summarized by year for 2024, 2025, and 2026 year-to-date.")
+    if result.location_year_business_view is not None:
+        add_key_value_paragraph(doc, "Location Logic", "When Location is available in Sales, Stock, or PO files, the report keeps the main SKU analysis unchanged and adds location-level views automatically.")
 
     doc.add_heading("Excel Column Explanation", level=1)
     explanation = pd.DataFrame(
@@ -1262,6 +1454,22 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
             doc.add_heading("Top SKU Purchase by Location", level=2)
             doc.add_paragraph("This table shows the largest SKU/location purchase combinations after applying the brand keyword filter.")
             add_table(doc, result.purchase_sku_location_summary, max_rows=15)
+
+    if result.location_year_business_view is not None and not result.location_year_business_view.empty:
+        doc.add_heading("Year + Location Business View", level=1)
+        doc.add_paragraph(
+            "This view is designed for questions like 2024 Toronto, 2025 Vancouver, or 2026 year-to-date by location. "
+            "Sales and PO amounts are matched by year and location; stock is current inventory by location when the stock report includes Location."
+        )
+        add_table(doc, result.location_year_business_view, max_rows=20)
+    if result.sales_location_summary is not None and not result.sales_location_summary.empty:
+        doc.add_heading("Sales by Location", level=2)
+        doc.add_paragraph("This table uses the latest available 12-month sales window and separates sales quantity by location when the Sales Report includes Location.")
+        add_table(doc, result.sales_location_summary, max_rows=15)
+    if result.stock_location_summary is not None and not result.stock_location_summary.empty:
+        doc.add_heading("Current Stock by Location", level=2)
+        doc.add_paragraph("This table separates current available, incoming, on-hand, and future inventory by location when the Stock Levels Report includes Location.")
+        add_table(doc, result.stock_location_summary, max_rows=15)
 
     if has_catalogue:
         add_catalogue_report_sections(doc, insights)
