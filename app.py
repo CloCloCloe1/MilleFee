@@ -167,6 +167,9 @@ EXPLANATIONS = {
             "Product SKU": "Unique product code used to merge Sales and Stock reports.",
             "Product Name": "Product description from the Sales report; stock name is used only if sales name is missing.",
             "Qty": "Sales quantity used for current inventory decisions. If year-labeled sales files are uploaded, this uses only the latest uploaded year.",
+            "Sales Amount ($ CAD)": "Sales revenue in the current analysis period when the Sales report includes an amount column.",
+            "Profit ($ CAD)": "Profit in the current analysis period when the Sales report includes a profit column.",
+            "Sales Margin %": "Profit divided by Sales Amount for the current analysis period.",
             "Contribution %": "SKU Qty divided by total Qty. Shows how much this SKU contributes to sales volume.",
             "Cumulative %": "Running total of Contribution % after SKUs are sorted from highest Qty to lowest Qty. Used to assign S/A/B/C type.",
             "SABC Type": "Sales priority class: S is the very top contribution, A is core, B is mid-tail, C is long-tail.",
@@ -210,6 +213,9 @@ EXPLANATIONS = {
         "Matrix": {"Rows": "SABC sales priority type.", "Columns": "Inventory Status groups.", "Values": "Number of SKUs in each combination."},
         "Priority": {
             "Qty": "Sales quantity from the current analysis period, usually the latest uploaded sales year.",
+            "Sales Amount ($ CAD)": "Sales revenue from the current analysis period when available.",
+            "Profit ($ CAD)": "Profit from the current analysis period when available.",
+            "Sales Margin %": "Profit divided by Sales Amount when available.",
             "Adjusted Future Inventory": "Usable future inventory after preventing negative stock.",
             "Coverage": "Months of stock coverage based on average monthly sales.",
             "Inventory Status": "Current inventory risk label.",
@@ -222,6 +228,7 @@ EXPLANATIONS = {
             "Sales Qty": "Total sales quantity for the uploaded sales file assigned to that year.",
             "Sales Amount ($ CAD)": "Sales revenue amount for that year when the sales report includes an amount column.",
             "Profit ($ CAD)": "Profit from the sales report when available. If Sales Amount exists but Profit does not, this is estimated as Sales Amount - PO Cost.",
+            "Sales Margin %": "Profit divided by Sales Amount. Higher means stronger profitability per dollar of sales.",
         },
         "Sales vs PO by Year": {
             "Year": "Year used to connect the sales file and PO file.",
@@ -229,6 +236,7 @@ EXPLANATIONS = {
             "Purchase Qty": "Total purchased quantity from the uploaded PO file for that year after brand and location filters.",
             "Sales Amount ($ CAD)": "Sales revenue from the sales report for that year when available.",
             "Profit ($ CAD)": "Profit from the sales report when available. If Sales Amount exists but Profit does not, this is estimated as Sales Amount - PO Cost.",
+            "Sales Margin %": "Profit divided by Sales Amount. This shows whether growth is also profitable.",
             "PO Cost ($ CAD)": "Total PO line cost for that year after brand and location filters. This is the purchasing/inbound cost, not sales revenue.",
             "PO Cost / Sales Qty ($ CAD)": "PO cost divided by units sold. Lower is usually better because less purchasing cost was needed per unit sold, but read it together with current stock and replenishment needs.",
             "PO Cost / Sales Amount": "PO cost divided by sales revenue when sales amount is available. Lower usually means better sales efficiency versus purchase cost.",
@@ -245,6 +253,7 @@ EXPLANATIONS = {
             "Sales Qty": "Sales quantity in this year and location when Sales Report includes date and location.",
             "Sales Amount ($ CAD)": "Sales revenue in this year and location when a sales amount column is available.",
             "Profit ($ CAD)": "Profit in this year and location when available, or Sales Amount - PO Cost when Sales Amount exists but Profit is not exported.",
+            "Sales Margin %": "Profit divided by Sales Amount for the latest sales year and location.",
             "PO Cost ($ CAD)": "PO cost in this year and location after applying the brand keyword filter.",
             "Purchase Qty": "Purchased quantity in this year and location after applying the brand keyword filter.",
             "Available / Incoming / On Hand / Future Inventory": "Current stock values from today's stock report. These are not historical 2024 or 2025 inventory numbers.",
@@ -255,6 +264,9 @@ EXPLANATIONS = {
             "Product SKU": "\u7528\u4e8e\u8fde\u63a5 Sales \u548c Stock \u4e24\u4efd\u62a5\u8868\u7684\u552f\u4e00\u4ea7\u54c1\u7f16\u7801\u3002",
             "Product Name": "\u4ea7\u54c1\u540d\u79f0\uff0c\u4f18\u5148\u6765\u81ea\u9500\u552e\u62a5\u8868\u3002",
             "Qty": "\u7528\u4e8e\u5f53\u524d\u5e93\u5b58\u51b3\u7b56\u7684\u9500\u91cf\u3002\u5982\u679c\u4e0a\u4f20\u4e86\u591a\u4e2a\u5e74\u4efd sales file\uff0c\u8fd9\u91cc\u53ea\u7528\u6700\u65b0\u4e0a\u4f20\u5e74\u4efd\u7684\u9500\u91cf\u3002",
+            "Sales Amount ($ CAD)": "\u5f53\u524d\u5206\u6790\u533a\u95f4\u7684\u9500\u552e\u989d\uff0c\u9700\u8981 Sales Report \u5305\u542b\u91d1\u989d\u5217\u3002",
+            "Profit ($ CAD)": "\u5f53\u524d\u5206\u6790\u533a\u95f4\u7684\u5229\u6da6\uff0c\u9700\u8981 Sales Report \u5305\u542b profit \u5217\u3002",
+            "Sales Margin %": "Profit / Sales Amount\uff0c\u7528\u4e8e\u5224\u65ad SKU \u76c8\u5229\u6548\u7387\u3002",
             "Contribution %": "\u5355\u4e2a SKU \u7684 Qty / \u5168\u90e8 SKU \u7684\u603b Qty\u3002",
             "Cumulative %": "\u6309 Qty \u4ece\u9ad8\u5230\u4f4e\u6392\u5e8f\u540e\uff0cContribution % \u7684\u7d2f\u8ba1\u503c\u3002",
             "SABC Type": "\u9500\u552e\u4f18\u5148\u7ea7\uff1aS/A \u662f\u6838\u5fc3 SKU\uff0cB/C \u662f\u4e2d\u957f\u5c3e SKU\u3002",
@@ -298,6 +310,9 @@ EXPLANATIONS = {
         "Matrix": {"Rows": "SABC \u9500\u552e\u4f18\u5148\u7ea7\u5206\u7c7b\u3002", "Columns": "\u5e93\u5b58\u72b6\u6001\u5206\u7c7b\u3002", "Values": "\u6bcf\u4e2a\u7ec4\u5408\u4e0b\u7684 SKU \u6570\u91cf\u3002"},
         "Priority": {
             "Qty": "\u5f53\u524d\u5206\u6790\u533a\u95f4\u7684\u9500\u552e\u6570\u91cf\uff0c\u901a\u5e38\u662f\u6700\u65b0\u4e0a\u4f20\u5e74\u4efd\u3002",
+            "Sales Amount ($ CAD)": "\u5f53\u524d\u5206\u6790\u533a\u95f4\u7684\u9500\u552e\u989d\uff0c\u5982\u6709\u3002",
+            "Profit ($ CAD)": "\u5f53\u524d\u5206\u6790\u533a\u95f4\u7684\u5229\u6da6\uff0c\u5982\u6709\u3002",
+            "Sales Margin %": "Profit / Sales Amount\uff0c\u5982\u6709\u3002",
             "Adjusted Future Inventory": "\u5254\u9664\u8d1f\u5e93\u5b58\u540e\u7684\u53ef\u7528\u672a\u6765\u5e93\u5b58\u3002",
             "Coverage": "\u57fa\u4e8e\u5e73\u5747\u6708\u9500\u91cf\u8ba1\u7b97\u7684\u5e93\u5b58\u8986\u76d6\u6708\u6570\u3002",
             "Inventory Status": "\u5f53\u524d\u5e93\u5b58\u98ce\u9669\u6807\u7b7e\u3002",
@@ -310,6 +325,7 @@ EXPLANATIONS = {
             "Sales Qty": "\u8be5\u5e74\u4efd sales file \u4e2d\u7684\u9500\u552e\u6570\u91cf\u5408\u8ba1\u3002",
             "Sales Amount ($ CAD)": "\u5982 sales report \u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u8be5\u5e74\u9500\u552e\u989d\u3002",
             "Profit ($ CAD)": "\u5982 sales report \u6709 profit \u5217\uff0c\u5219\u4e3a\u8be5\u5e74\u5229\u6da6\u3002",
+            "Sales Margin %": "Profit / Sales Amount\uff0c\u8868\u793a\u8be5\u5e74\u7684\u9500\u552e\u5229\u6da6\u7387\u3002",
         },
         "Sales vs PO by Year": {
             "Year": "\u7528\u4e8e\u8fde\u63a5 Sales file \u548c PO file \u7684\u5e74\u4efd\u3002",
@@ -317,6 +333,7 @@ EXPLANATIONS = {
             "Purchase Qty": "\u8be5\u5e74\u4e0a\u4f20 PO file \u4e2d\uff0c\u7b5b\u9009\u54c1\u724c\u548c location \u540e\u7684\u91c7\u8d2d\u6570\u91cf\u3002",
             "Sales Amount ($ CAD)": "\u5982 sales report \u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u8be5\u5e74\u9500\u552e\u989d\u3002",
             "Profit ($ CAD)": "\u5982 sales report \u6709 profit \u5217\uff0c\u5219\u4e3a\u8be5\u5e74\u5229\u6da6\uff1b\u5982\u679c\u6709 Sales Amount \u4f46\u6ca1\u6709 Profit\uff0c\u5219\u7528 Sales Amount - PO Cost \u4f30\u7b97\u3002",
+            "Sales Margin %": "Profit / Sales Amount\uff0c\u8868\u793a\u6bcf 1 \u5757\u9500\u552e\u989d\u91cc\u6709\u591a\u5c11\u662f\u5229\u6da6\u3002",
             "PO Cost ($ CAD)": "\u8be5\u5e74\u4e0a\u4f20 PO file \u4e2d\uff0c\u7b5b\u9009\u54c1\u724c\u548c location \u540e\u7684 PO line \u8fdb\u8d27\u6210\u672c\u3002",
             "PO Cost / Sales Qty ($ CAD)": "PO Cost / Sales Qty\uff0c\u8868\u793a\u6bcf\u5356\u51fa 1 \u4ef6\u5bf9\u5e94\u7684\u8fdb\u8d27\u6210\u672c\u5f3a\u5ea6\u3002\u901a\u5e38\u8d8a\u4f4e\u8d8a\u597d\uff0c\u4f46\u8981\u7ed3\u5408\u5f53\u524d\u5e93\u5b58\u548c\u662f\u5426\u9700\u8981\u8865\u8d27\u4e00\u8d77\u770b\u3002",
             "PO Cost / Sales Amount": "\u5982\u6709\u9500\u552e\u989d\uff0c\u5219\u4e3a PO Cost / Sales Amount\u3002\u901a\u5e38\u8d8a\u4f4e\u4ee3\u8868\u91c7\u8d2d\u6210\u672c\u76f8\u5bf9\u9500\u552e\u989d\u66f4\u6709\u6548\u7387\u3002",
@@ -333,6 +350,7 @@ EXPLANATIONS = {
             "Sales Qty": "\u5982 Sales Report \u6709\u65e5\u671f\u548c location\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u9500\u91cf\u3002",
             "Sales Amount ($ CAD)": "\u5982 Sales Report \u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u9500\u552e\u989d\u3002",
             "Profit ($ CAD)": "\u5982 Sales Report \u6709 profit \u5217\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u5229\u6da6\uff1b\u5982\u679c\u6709 Sales Amount \u4f46\u6ca1\u6709 Profit\uff0c\u5219\u7528 Sales Amount - PO Cost \u4f30\u7b97\u3002",
+            "Sales Margin %": "Profit / Sales Amount\uff0c\u7528\u4e8e\u5224\u65ad\u8be5\u5e74 + location \u7684\u76c8\u5229\u6548\u7387\u3002",
             "PO Cost ($ CAD)": "\u5957\u7528\u54c1\u724c\u5173\u952e\u8bcd\u7b5b\u9009\u540e\uff0c\u8be5\u5e74 + location \u7684 PO \u8fdb\u8d27\u6210\u672c\u3002",
             "Purchase Qty": "\u5957\u7528\u54c1\u724c\u5173\u952e\u8bcd\u7b5b\u9009\u540e\uff0c\u8be5\u5e74 + location \u7684\u91c7\u8d2d\u6570\u91cf\u3002",
             "Available / Incoming / On Hand / Future Inventory": "\u8fd9\u662f\u4eca\u5929 stock report \u7684\u5f53\u524d\u5e93\u5b58\u503c\uff0c\u4e0d\u662f 2024 \u6216 2025 \u7684\u5386\u53f2\u5e93\u5b58\u3002",
@@ -412,6 +430,12 @@ def show_sales_po_insights(language: str, df: pd.DataFrame):
                 lines.append(f"{int(top_profit['Year'])} 的 Profit 最高，为 ${top_profit['Profit ($ CAD)']:,.2f} CAD。")
             else:
                 lines.append(f"{int(top_profit['Year'])} has the highest Profit at ${top_profit['Profit ($ CAD)']:,.2f} CAD.")
+        if "Sales Margin %" in work.columns and work["Sales Margin %"].notna().any():
+            top_margin = work.loc[work["Sales Margin %"].idxmax()]
+            if language == ZH:
+                lines.append(f"{int(top_margin['Year'])} 的 Sales Margin % 最高，为 {top_margin['Sales Margin %']:.1%}。")
+            else:
+                lines.append(f"{int(top_margin['Year'])} has the strongest Sales Margin at {top_margin['Sales Margin %']:.1%}.")
         for line in lines:
             st.write(f"- {line}")
 
@@ -425,7 +449,7 @@ def chart_ready(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
 
 
 def show_sales_po_charts(df: pd.DataFrame):
-    trend = chart_ready(df, ["Year", "Sales Qty", "Purchase Qty", "Sales Amount ($ CAD)", "PO Cost ($ CAD)", "Profit ($ CAD)"])
+    trend = chart_ready(df, ["Year", "Sales Qty", "Purchase Qty", "Sales Amount ($ CAD)", "PO Cost ($ CAD)", "Profit ($ CAD)", "Sales Margin %"])
     if "Year" not in trend or trend.empty:
         return
     trend = trend.sort_values("Year").copy()
@@ -450,20 +474,34 @@ def show_sales_po_charts(df: pd.DataFrame):
     amount_cols = [col for col in ["Sales Amount ($ CAD)", "PO Cost ($ CAD)", "Profit ($ CAD)"] if col in trend.columns and trend[col].notna().any()]
     if "Sales Amount ($ CAD)" not in amount_cols:
         st.info("Sales Amount and Profit are blank because the uploaded Sales reports do not include amount/profit columns.")
-        return
-    amount_data = trend.melt("Year", value_vars=amount_cols, var_name="Metric", value_name="Amount").dropna(subset=["Amount"])
-    amount_chart = (
-        alt.Chart(amount_data)
-        .mark_line(point=True, strokeWidth=3)
-        .encode(
-            x=alt.X("Year:O", title="Year", sort=trend["Year"].tolist()),
-            y=alt.Y("Amount:Q", title="Amount ($ CAD)"),
-            color=alt.Color("Metric:N", title="Metric"),
-            tooltip=["Year", "Metric", alt.Tooltip("Amount:Q", format="$,.2f")],
+    else:
+        amount_data = trend.melt("Year", value_vars=amount_cols, var_name="Metric", value_name="Amount").dropna(subset=["Amount"])
+        amount_chart = (
+            alt.Chart(amount_data)
+            .mark_line(point=True, strokeWidth=3)
+            .encode(
+                x=alt.X("Year:O", title="Year", sort=trend["Year"].tolist()),
+                y=alt.Y("Amount:Q", title="Amount ($ CAD)"),
+                color=alt.Color("Metric:N", title="Metric"),
+                tooltip=["Year", "Metric", alt.Tooltip("Amount:Q", format="$,.2f")],
+            )
+            .properties(title="Sales Amount vs Purchase Cost and Profit", height=300)
         )
-        .properties(title="Sales Amount vs Purchase Cost and Profit", height=300)
-    )
-    st.altair_chart(amount_chart, use_container_width=True)
+        st.altair_chart(amount_chart, use_container_width=True)
+
+    if "Sales Margin %" in trend.columns and trend["Sales Margin %"].notna().any():
+        margin_chart = (
+            alt.Chart(trend.dropna(subset=["Sales Margin %"]))
+            .mark_line(point=True, strokeWidth=3)
+            .encode(
+                x=alt.X("Year:O", title="Year", sort=trend["Year"].tolist()),
+                y=alt.Y("Sales Margin %:Q", title="Sales Margin %", axis=alt.Axis(format="%")),
+                color=alt.value("#D92D20"),
+                tooltip=["Year", alt.Tooltip("Sales Margin %:Q", format=".1%")],
+            )
+            .properties(title="Sales Margin Trend", height=260)
+        )
+        st.altair_chart(margin_chart, use_container_width=True)
 
 
 def apply_styles():
@@ -635,6 +673,8 @@ def bp_generator_page(t: dict, language: str):
         show_sales_po_insights(language, result.sales_purchase_year_summary)
         show_sales_po_charts(result.sales_purchase_year_summary)
         compare_view = result.sales_purchase_year_summary.copy()
+        if "Sales Margin %" in compare_view:
+            compare_view["Sales Margin %"] = compare_view["Sales Margin %"].map(lambda x: "" if pd.isna(x) else f"{x:.1%}")
         for col in [c for c in compare_view.columns if "($ CAD)" in c or c == "PO Cost / Sales Amount"]:
             if "PO Cost / Sales Amount" == col:
                 compare_view[col] = compare_view[col].map(lambda x: "" if pd.isna(x) else f"{x:.1%}")
@@ -645,6 +685,8 @@ def bp_generator_page(t: dict, language: str):
         st.subheader(t["sales_year_summary"])
         show_column_notes(language, "Sales Summary by Year")
         sales_year_view = result.sales_year_summary.copy()
+        if "Sales Margin %" in sales_year_view:
+            sales_year_view["Sales Margin %"] = sales_year_view["Sales Margin %"].map(lambda x: "" if pd.isna(x) else f"{x:.1%}")
         for col in [c for c in sales_year_view.columns if "($ CAD)" in c]:
             sales_year_view[col] = sales_year_view[col].map(lambda x: "" if pd.isna(x) else f"{x:,.2f}")
         st.dataframe(sales_year_view, use_container_width=True, hide_index=True)
@@ -653,6 +695,8 @@ def bp_generator_page(t: dict, language: str):
         st.subheader(t["location_year_view"])
         show_column_notes(language, "Latest Inventory View")
         location_year_view = result.location_year_business_view.copy()
+        if "Sales Margin %" in location_year_view:
+            location_year_view["Sales Margin %"] = location_year_view["Sales Margin %"].map(lambda x: "" if pd.isna(x) else f"{x:.1%}")
         for col in [c for c in location_year_view.columns if "($ CAD)" in c]:
             location_year_view[col] = location_year_view[col].map(lambda x: "" if pd.isna(x) else f"{x:,.2f}")
         st.dataframe(location_year_view, use_container_width=True, hide_index=True)
@@ -669,7 +713,7 @@ def bp_generator_page(t: dict, language: str):
         st.subheader(t["final_analysis"])
         show_column_notes(language, "Final Analysis")
         view = result.final.copy()
-        for col in ["Contribution %", "Cumulative %"]:
+        for col in ["Contribution %", "Cumulative %", "Sales Margin %"]:
             if col in view:
                 view[col] = view[col].map(lambda x: f"{x:.1%}" if pd.notna(x) else "")
         if "Coverage" in view:
@@ -697,13 +741,20 @@ def bp_generator_page(t: dict, language: str):
             st.dataframe(result.matrix, use_container_width=True)
 
     with tab3:
-        priority_cols = ["Product SKU", "Product Name", "Qty", "SABC Type", "Adjusted Future Inventory", "Coverage", "Inventory Status", "Action"]
+        priority_cols = ["Product SKU", "Product Name", "Qty", "Sales Amount ($ CAD)", "Profit ($ CAD)", "Sales Margin %", "SABC Type", "Adjusted Future Inventory", "Coverage", "Inventory Status", "Action"]
+        priority_cols = [col for col in priority_cols if col in result.final.columns]
         st.subheader(t["replenishment"])
         show_column_notes(language, "Priority")
         st.dataframe(result.insights["urgent_table"][priority_cols], use_container_width=True)
         st.subheader(t["overstock_risk"])
         show_column_notes(language, "Priority")
         st.dataframe(result.insights["overstock_table"][priority_cols], use_container_width=True)
+        if "top_profit_table" in result.insights and not result.insights["top_profit_table"].empty:
+            st.subheader("Top Profit SKUs")
+            st.dataframe(result.insights["top_profit_table"][priority_cols], use_container_width=True)
+        if "low_sales_margin_table" in result.insights and not result.insights["low_sales_margin_table"].empty:
+            st.subheader("Low Sales Margin Review")
+            st.dataframe(result.insights["low_sales_margin_table"][priority_cols], use_container_width=True)
 
     with tab4:
         st.subheader(t["auto_detected"])

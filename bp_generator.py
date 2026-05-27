@@ -37,6 +37,7 @@ MID_GRAY = "86868B"
 PO_COST_COL = "PO Cost ($ CAD)"
 SALES_AMOUNT_COL = "Sales Amount ($ CAD)"
 PROFIT_COL = "Profit ($ CAD)"
+SALES_MARGIN_COL = "Sales Margin %"
 COST_PER_UNIT_COL = "PO Cost / Sales Qty ($ CAD)"
 PO_SALES_RATIO_COL = "PO Cost / Sales Amount"
 TOTAL_PO_COST_COL = "Total PO Cost ($ CAD)"
@@ -92,6 +93,16 @@ def normalize_sku(value: object) -> str:
         except (InvalidOperation, ValueError):
             return text
     return text
+
+
+def numeric_series(series: pd.Series) -> pd.Series:
+    cleaned = series.astype(str).str.replace("%", "", regex=False).str.replace(",", "", regex=False).str.strip()
+    return pd.to_numeric(cleaned, errors="coerce")
+
+
+def margin_series(series: pd.Series) -> pd.Series:
+    margin = numeric_series(series)
+    return margin.where(margin.abs() <= 1, margin / 100)
 
 
 def first_existing_column(columns: Iterable[str], aliases: Iterable[str]) -> str | None:
@@ -289,6 +300,7 @@ def aggregate_sales(
     location_col = detect_column(sales_df, ["Location", "Warehouse", "Store", "Branch", "Sales Location", "Stock Location", "Outlet"], required=False)
     amount_col = detect_column(sales_df, ["Total without taxes", "Net Sales", "Sales Amount", "Amount", "Revenue", "Total with taxes", "Total"], required=False)
     profit_col = detect_column(sales_df, ["Profit", "Gross Profit", "Net Profit"], required=False)
+    margin_col = detect_column(sales_df, ["Margin %", "Margin", "Profit Margin", "Gross Margin %", "Gross Margin", "GM %"], required=False)
     barcode_col = detect_column(sales_df, ["Barcode", "JAN", "UPC", "EAN"], required=False)
     brand_col = detect_column(sales_df, ["Brand", "Supplier", "Vendor"], required=False)
 
@@ -297,14 +309,32 @@ def aggregate_sales(
     work = filtered.copy() if manual_year_mode and "_source_year" in filtered.columns else latest_12_months(filtered, date_col)
     work["_sku"] = work[sku_col].map(normalize_sku)
     work["_qty"] = pd.to_numeric(work[qty_col], errors="coerce").fillna(0)
+    if amount_col:
+        work["_sales_amount"] = numeric_series(work[amount_col]).fillna(0)
+    if profit_col:
+        work["_profit"] = numeric_series(work[profit_col]).fillna(0)
+    if margin_col:
+        work["_sales_margin_raw"] = margin_series(work[margin_col])
     work = work[work["_sku"] != ""]
     manual_location = location_filter.strip() if location_filter.strip() and not location_col else ""
+    grouped_aggregations = {"Product SKU": ("_sku", "first"), "Product Name": (name_col, mode_or_first), "Qty": ("_qty", "sum")}
+    if amount_col:
+        grouped_aggregations[SALES_AMOUNT_COL] = ("_sales_amount", "sum")
+    if profit_col:
+        grouped_aggregations[PROFIT_COL] = ("_profit", "sum")
+    if margin_col:
+        grouped_aggregations["_margin_avg"] = ("_sales_margin_raw", "mean")
     grouped = (
         work.groupby("_sku", as_index=False)
-        .agg(**{"Product SKU": ("_sku", "first"), "Product Name": (name_col, mode_or_first), "Qty": ("_qty", "sum")})
+        .agg(**grouped_aggregations)
         .drop(columns=["_sku"], errors="ignore")
         .sort_values("Qty", ascending=False)
     )
+    if {SALES_AMOUNT_COL, PROFIT_COL}.issubset(grouped.columns):
+        grouped[SALES_MARGIN_COL] = np.where(grouped[SALES_AMOUNT_COL] > 0, grouped[PROFIT_COL] / grouped[SALES_AMOUNT_COL], np.nan)
+    elif "_margin_avg" in grouped.columns:
+        grouped[SALES_MARGIN_COL] = grouped["_margin_avg"]
+    grouped = grouped.drop(columns=["_margin_avg"], errors="ignore")
     sales_year_summary = None
     annual = None
     if manual_year_mode and "_source_year" in filtered.columns:
@@ -321,11 +351,14 @@ def aggregate_sales(
         annual = annual[(annual["_sku"] != "") & annual["_year"].notna()]
         aggregations = {"SKU Count": ("_sku", "nunique"), "Sales Qty": ("_qty", "sum")}
         if amount_col:
-            annual["_sales_amount"] = pd.to_numeric(annual[amount_col], errors="coerce").fillna(0)
+            annual["_sales_amount"] = numeric_series(annual[amount_col]).fillna(0)
             aggregations[SALES_AMOUNT_COL] = ("_sales_amount", "sum")
         if profit_col:
-            annual["_profit"] = pd.to_numeric(annual[profit_col], errors="coerce").fillna(0)
+            annual["_profit"] = numeric_series(annual[profit_col]).fillna(0)
             aggregations[PROFIT_COL] = ("_profit", "sum")
+        if margin_col:
+            annual["_sales_margin_raw"] = margin_series(annual[margin_col])
+            aggregations["_margin_avg"] = ("_sales_margin_raw", "mean")
         sales_year_summary = (
             annual.groupby("_year", dropna=False)
             .agg(**aggregations)
@@ -338,17 +371,40 @@ def aggregate_sales(
             sales_year_summary[SALES_AMOUNT_COL] = np.nan
         if PROFIT_COL not in sales_year_summary.columns:
             sales_year_summary[PROFIT_COL] = np.nan
+        if {SALES_AMOUNT_COL, PROFIT_COL}.issubset(sales_year_summary.columns):
+            sales_year_summary[SALES_MARGIN_COL] = np.where(
+                sales_year_summary[SALES_AMOUNT_COL] > 0,
+                sales_year_summary[PROFIT_COL] / sales_year_summary[SALES_AMOUNT_COL],
+                np.nan,
+            )
+        elif "_margin_avg" in sales_year_summary.columns:
+            sales_year_summary[SALES_MARGIN_COL] = sales_year_summary["_margin_avg"]
+        else:
+            sales_year_summary[SALES_MARGIN_COL] = np.nan
+        sales_year_summary = sales_year_summary.drop(columns=["_margin_avg"], errors="ignore")
 
     current_sales_year = None
     if manual_year_mode and annual is not None and not annual.empty:
         current_sales_year = int(annual["_year"].max())
         work = annual[annual["_year"] == current_sales_year].copy()
+        grouped_aggregations = {"Product SKU": ("_sku", "first"), "Product Name": (name_col, mode_or_first), "Qty": ("_qty", "sum")}
+        if "_sales_amount" in work.columns:
+            grouped_aggregations[SALES_AMOUNT_COL] = ("_sales_amount", "sum")
+        if "_profit" in work.columns:
+            grouped_aggregations[PROFIT_COL] = ("_profit", "sum")
+        if "_sales_margin_raw" in work.columns:
+            grouped_aggregations["_margin_avg"] = ("_sales_margin_raw", "mean")
         grouped = (
             work.groupby("_sku", as_index=False)
-            .agg(**{"Product SKU": ("_sku", "first"), "Product Name": (name_col, mode_or_first), "Qty": ("_qty", "sum")})
+            .agg(**grouped_aggregations)
             .drop(columns=["_sku"], errors="ignore")
             .sort_values("Qty", ascending=False)
         )
+        if {SALES_AMOUNT_COL, PROFIT_COL}.issubset(grouped.columns):
+            grouped[SALES_MARGIN_COL] = np.where(grouped[SALES_AMOUNT_COL] > 0, grouped[PROFIT_COL] / grouped[SALES_AMOUNT_COL], np.nan)
+        elif "_margin_avg" in grouped.columns:
+            grouped[SALES_MARGIN_COL] = grouped["_margin_avg"]
+        grouped = grouped.drop(columns=["_margin_avg"], errors="ignore")
 
     sales_location_summary = None
     if location_col or manual_location:
@@ -356,11 +412,14 @@ def aggregate_sales(
         loc["_location"] = manual_location or loc[location_col].map(clean_location)
         aggregations = {"SKU Count": ("_sku", "nunique"), "Qty": ("_qty", "sum")}
         if amount_col:
-            loc["_sales_amount"] = pd.to_numeric(loc[amount_col], errors="coerce").fillna(0)
+            loc["_sales_amount"] = numeric_series(loc[amount_col]).fillna(0) if "_sales_amount" not in loc.columns else loc["_sales_amount"]
             aggregations[SALES_AMOUNT_COL] = ("_sales_amount", "sum")
         if profit_col:
-            loc["_profit"] = pd.to_numeric(loc[profit_col], errors="coerce").fillna(0)
+            loc["_profit"] = numeric_series(loc[profit_col]).fillna(0) if "_profit" not in loc.columns else loc["_profit"]
             aggregations[PROFIT_COL] = ("_profit", "sum")
+        if margin_col:
+            loc["_sales_margin_raw"] = margin_series(loc[margin_col]) if "_sales_margin_raw" not in loc.columns else loc["_sales_margin_raw"]
+            aggregations["_margin_avg"] = ("_sales_margin_raw", "mean")
         sales_location_summary = (
             loc.groupby("_location", dropna=False)
             .agg(**aggregations)
@@ -372,6 +431,17 @@ def aggregate_sales(
             sales_location_summary[SALES_AMOUNT_COL] = np.nan
         if PROFIT_COL not in sales_location_summary.columns:
             sales_location_summary[PROFIT_COL] = np.nan
+        if {SALES_AMOUNT_COL, PROFIT_COL}.issubset(sales_location_summary.columns):
+            sales_location_summary[SALES_MARGIN_COL] = np.where(
+                sales_location_summary[SALES_AMOUNT_COL] > 0,
+                sales_location_summary[PROFIT_COL] / sales_location_summary[SALES_AMOUNT_COL],
+                np.nan,
+            )
+        elif "_margin_avg" in sales_location_summary.columns:
+            sales_location_summary[SALES_MARGIN_COL] = sales_location_summary["_margin_avg"]
+        else:
+            sales_location_summary[SALES_MARGIN_COL] = np.nan
+        sales_location_summary = sales_location_summary.drop(columns=["_margin_avg"], errors="ignore")
 
     sales_year_location_summary = None
     if annual is not None and (location_col or manual_location):
@@ -380,12 +450,16 @@ def aggregate_sales(
         aggregations = {"SKU Count": ("_sku", "nunique"), "Sales Qty": ("_qty", "sum")}
         if amount_col:
             if "_sales_amount" not in annual.columns:
-                annual["_sales_amount"] = pd.to_numeric(annual[amount_col], errors="coerce").fillna(0)
+                annual["_sales_amount"] = numeric_series(annual[amount_col]).fillna(0)
             aggregations[SALES_AMOUNT_COL] = ("_sales_amount", "sum")
         if profit_col:
             if "_profit" not in annual.columns:
-                annual["_profit"] = pd.to_numeric(annual[profit_col], errors="coerce").fillna(0)
+                annual["_profit"] = numeric_series(annual[profit_col]).fillna(0)
             aggregations[PROFIT_COL] = ("_profit", "sum")
+        if margin_col:
+            if "_sales_margin_raw" not in annual.columns:
+                annual["_sales_margin_raw"] = margin_series(annual[margin_col])
+            aggregations["_margin_avg"] = ("_sales_margin_raw", "mean")
         sales_year_location_summary = (
             annual.groupby(["_year", "_location"], dropna=False)
             .agg(**aggregations)
@@ -398,19 +472,36 @@ def aggregate_sales(
             sales_year_location_summary[SALES_AMOUNT_COL] = np.nan
         if PROFIT_COL not in sales_year_location_summary.columns:
             sales_year_location_summary[PROFIT_COL] = np.nan
+        if {SALES_AMOUNT_COL, PROFIT_COL}.issubset(sales_year_location_summary.columns):
+            sales_year_location_summary[SALES_MARGIN_COL] = np.where(
+                sales_year_location_summary[SALES_AMOUNT_COL] > 0,
+                sales_year_location_summary[PROFIT_COL] / sales_year_location_summary[SALES_AMOUNT_COL],
+                np.nan,
+            )
+        elif "_margin_avg" in sales_year_location_summary.columns:
+            sales_year_location_summary[SALES_MARGIN_COL] = sales_year_location_summary["_margin_avg"]
+        else:
+            sales_year_location_summary[SALES_MARGIN_COL] = np.nan
+        sales_year_location_summary = sales_year_location_summary.drop(columns=["_margin_avg"], errors="ignore")
 
     sales_top_sku_by_year = None
     if annual is not None and not annual.empty:
-        top_base = annual.groupby(["_year", "_sku"], as_index=False).agg(
-            **{"Product SKU": ("_sku", "first"), "Product Name": (name_col, mode_or_first), "Qty": ("_qty", "sum")}
-        )
+        top_aggs = {"Product SKU": ("_sku", "first"), "Product Name": (name_col, mode_or_first), "Qty": ("_qty", "sum")}
+        if "_sales_amount" in annual.columns:
+            top_aggs[SALES_AMOUNT_COL] = ("_sales_amount", "sum")
+        if "_profit" in annual.columns:
+            top_aggs[PROFIT_COL] = ("_profit", "sum")
+        top_base = annual.groupby(["_year", "_sku"], as_index=False).agg(**top_aggs)
+        if {SALES_AMOUNT_COL, PROFIT_COL}.issubset(top_base.columns):
+            top_base[SALES_MARGIN_COL] = np.where(top_base[SALES_AMOUNT_COL] > 0, top_base[PROFIT_COL] / top_base[SALES_AMOUNT_COL], np.nan)
         top_base["Rank"] = top_base.groupby("_year")["Qty"].rank(method="first", ascending=False).astype(int)
+        top_cols = ["Year", "Rank", "Product SKU", "Product Name", "Qty", SALES_AMOUNT_COL, PROFIT_COL, SALES_MARGIN_COL]
         sales_top_sku_by_year = (
             top_base[top_base["Rank"] <= 5]
             .rename(columns={"_year": "Year"})
             .sort_values(["Year", "Rank"])
-            [["Year", "Rank", "Product SKU", "Product Name", "Qty"]]
         )
+        sales_top_sku_by_year = sales_top_sku_by_year[[col for col in top_cols if col in sales_top_sku_by_year.columns]]
         sales_top_sku_by_year["Year"] = sales_top_sku_by_year["Year"].astype(int)
 
     return grouped, sales_year_summary, sales_location_summary, sales_year_location_summary, sales_top_sku_by_year, {
@@ -422,6 +513,7 @@ def aggregate_sales(
         "sales_manual_location_label": manual_location or "Not used",
         "sales_amount": amount_col or "Not detected",
         "sales_profit": profit_col or "Not detected",
+        "sales_margin": margin_col or "Not detected",
         "sales_filter_keyword": filter_keyword or "Not used",
         "sales_year_mode": "Manual upload year" if manual_year_mode else "Latest 12 months / detected from sales date",
         "current_analysis_sales_year": current_sales_year or "Latest available period",
@@ -813,7 +905,7 @@ def build_latest_year_inventory_view(
     view = None
     if sales_year_location_summary is not None and not sales_year_location_summary.empty:
         sales_cols = ["Year", "Location", "Sales Qty"]
-        for col in [SALES_AMOUNT_COL, PROFIT_COL]:
+        for col in [SALES_AMOUNT_COL, PROFIT_COL, SALES_MARGIN_COL]:
             if col in sales_year_location_summary.columns:
                 sales_cols.append(col)
         view = sales_year_location_summary[sales_cols].copy()
@@ -834,7 +926,7 @@ def build_latest_year_inventory_view(
     for col in ["Sales Qty", PO_COST_COL, "Purchase Qty", "Available", "Incoming", "On Hand", "Future Inventory"]:
         if col in view.columns:
             view[col] = pd.to_numeric(view[col], errors="coerce").fillna(0)
-    for col in [SALES_AMOUNT_COL, PROFIT_COL]:
+    for col in [SALES_AMOUNT_COL, PROFIT_COL, SALES_MARGIN_COL]:
         if col in view.columns:
             view[col] = pd.to_numeric(view[col], errors="coerce")
     if PROFIT_COL not in view.columns and {SALES_AMOUNT_COL, PO_COST_COL}.issubset(view.columns):
@@ -848,6 +940,7 @@ def build_latest_year_inventory_view(
         "Sales Qty",
         SALES_AMOUNT_COL,
         PROFIT_COL,
+        SALES_MARGIN_COL,
         PO_COST_COL,
         "Purchase Qty",
         "Available",
@@ -868,7 +961,7 @@ def build_sales_purchase_year_summary(
     view = None
     if sales_year_summary is not None and not sales_year_summary.empty:
         cols = ["Year", "SKU Count", "Sales Qty"]
-        for col in [SALES_AMOUNT_COL, PROFIT_COL]:
+        for col in [SALES_AMOUNT_COL, PROFIT_COL, SALES_MARGIN_COL]:
             if col in sales_year_summary.columns:
                 cols.append(col)
         view = sales_year_summary[cols].copy()
@@ -883,7 +976,7 @@ def build_sales_purchase_year_summary(
     for col in ["SKU Count", "Sales Qty", "Purchase Qty", PO_COST_COL]:
         if col in view.columns:
             view[col] = pd.to_numeric(view[col], errors="coerce").fillna(0)
-    for col in [SALES_AMOUNT_COL, PROFIT_COL]:
+    for col in [SALES_AMOUNT_COL, PROFIT_COL, SALES_MARGIN_COL]:
         if col in view.columns:
             view[col] = pd.to_numeric(view[col], errors="coerce")
     if PROFIT_COL not in view.columns and {SALES_AMOUNT_COL, PO_COST_COL}.issubset(view.columns):
@@ -902,6 +995,7 @@ def build_sales_purchase_year_summary(
         "Purchase Qty",
         SALES_AMOUNT_COL,
         PROFIT_COL,
+        SALES_MARGIN_COL,
         PO_COST_COL,
         COST_PER_UNIT_COL,
         PO_SALES_RATIO_COL,
@@ -1000,6 +1094,9 @@ def build_analysis(
         "Product SKU",
         "Product Name",
         "Qty",
+        SALES_AMOUNT_COL,
+        PROFIT_COL,
+        SALES_MARGIN_COL,
         "Contribution %",
         "Cumulative %",
         "SABC Type",
@@ -1013,6 +1110,7 @@ def build_analysis(
         "Action",
     ]
     purchase_cols_in_final = [c for c in ["2024 PO Cost ($ CAD)", "2025 PO Cost ($ CAD)", "2026 PO Cost ($ CAD)", TOTAL_PO_COST_COL] if c in final.columns]
+    base_cols = [c for c in base_cols if c in final.columns]
     base_cols = base_cols + purchase_cols_in_final
     lifecycle_cols = [c for c in ["Recommendation / Lifecycle Status", "Lifecycle Type", "Lifecycle Action", "Lifecycle Note"] if c in final.columns]
     base_cols = base_cols + lifecycle_cols
@@ -1095,6 +1193,15 @@ def build_insights(final: pd.DataFrame, sabc: pd.DataFrame, status: pd.DataFrame
     core = final[final["SABC Type"].isin(["S", "A"])]
     no_sales = final[final["Inventory Status"] == "No Sales / Review"]
     top_sku_table = final.sort_values("Qty", ascending=False).head(5).copy()
+    top_profit_table = pd.DataFrame()
+    low_margin_table = pd.DataFrame()
+    avg_sales_margin = np.nan
+    if PROFIT_COL in final.columns and pd.to_numeric(final[PROFIT_COL], errors="coerce").notna().any():
+        top_profit_table = final[pd.to_numeric(final[PROFIT_COL], errors="coerce").notna()].sort_values(PROFIT_COL, ascending=False).head(10).copy()
+    if SALES_MARGIN_COL in final.columns and pd.to_numeric(final[SALES_MARGIN_COL], errors="coerce").notna().any():
+        margin_valid = final[pd.to_numeric(final[SALES_MARGIN_COL], errors="coerce").notna()].copy()
+        avg_sales_margin = float(margin_valid[SALES_MARGIN_COL].mean()) if not margin_valid.empty else np.nan
+        low_margin_table = margin_valid[margin_valid["Qty"] > 0].sort_values(SALES_MARGIN_COL, ascending=True).head(10).copy()
     catalogue_present = any(col in final.columns for col in ["Category", "Recommendation / Lifecycle Status", "RP USD", "Wholesale Price", "Inner Case", "Outer Case"])
     catalogue_insights = build_catalogue_insights(final) if catalogue_present else {}
     return {
@@ -1110,6 +1217,9 @@ def build_insights(final: pd.DataFrame, sabc: pd.DataFrame, status: pd.DataFrame
         "core_sku_count": len(core),
         "core_qty_share": 0 if total_qty == 0 else float(core["Qty"].sum() / total_qty),
         "top_sku_table": top_sku_table,
+        "top_profit_table": top_profit_table,
+        "low_sales_margin_table": low_margin_table,
+        "avg_sales_margin": avg_sales_margin,
         "urgent_table": urgent.head(10),
         "overstock_table": overstock.head(10),
         "catalogue_present": catalogue_present,
@@ -1295,13 +1405,27 @@ def add_excel_dashboard_charts(wb: Workbook):
                 amount_line.height = 7
                 amount_line.width = 13
                 ws.add_chart(amount_line, "P18")
+        if trend_ws.max_row > 1 and SALES_MARGIN_COL in headers:
+            margin_col = headers.index(SALES_MARGIN_COL) + 1
+            margin_values = [trend_ws.cell(row=row, column=margin_col).value for row in range(2, trend_ws.max_row + 1)]
+            if any(value not in (None, "") and pd.notna(value) for value in margin_values):
+                margin_line = LineChart()
+                margin_line.title = "Sales Margin Trend"
+                margin_line.y_axis.title = "Margin %"
+                margin_line.x_axis.title = "Year"
+                data = Reference(trend_ws, min_col=margin_col, max_col=margin_col, min_row=1, max_row=trend_ws.max_row)
+                margin_line.add_data(data, titles_from_data=True)
+                margin_line.set_categories(cats)
+                margin_line.height = 7
+                margin_line.width = 13
+                ws.add_chart(margin_line, "P34")
 
 
 def generate_excel(result: AnalysisResult) -> bytes:
     wb = Workbook()
     wb.remove(wb.active)
     sheets = [
-        ("Final Analysis", result.final, "FinalAnalysisTable", ["Contribution %", "Cumulative %", "Margin %"]),
+        ("Final Analysis", result.final, "FinalAnalysisTable", ["Contribution %", "Cumulative %", "Margin %", SALES_MARGIN_COL]),
         ("SABC Summary", result.sabc_summary, "SABCSummaryTable", ["Qty Share"]),
         ("Inventory Status Summary", result.inventory_status_summary, "InventoryStatusSummaryTable", ["Qty Share"]),
         ("Action Summary", result.action_summary, "ActionSummaryTable", ["Qty Share"]),
@@ -1309,16 +1433,20 @@ def generate_excel(result: AnalysisResult) -> bytes:
     ]
     if result.location_year_business_view is not None and not result.location_year_business_view.empty:
         latest_year = int(pd.to_numeric(result.location_year_business_view["Year"], errors="coerce").max())
-        sheets.append((f"{latest_year} Inventory View", result.location_year_business_view, "InventoryViewTable", []))
+        sheets.append((f"{latest_year} Inventory View", result.location_year_business_view, "InventoryViewTable", [SALES_MARGIN_COL]))
     if result.sales_purchase_year_summary is not None and not result.sales_purchase_year_summary.empty:
-        sheets.append(("Sales PO Year Compare", result.sales_purchase_year_summary, "SalesPOYearCompareTable", []))
+        sheets.append(("Sales PO Year Compare", result.sales_purchase_year_summary, "SalesPOYearCompareTable", [SALES_MARGIN_COL, PO_SALES_RATIO_COL]))
     if result.sales_year_summary is not None and not result.sales_year_summary.empty:
-        sheets.append(("Sales Summary by Year", result.sales_year_summary, "SalesSummaryByYearTable", []))
+        sheets.append(("Sales Summary by Year", result.sales_year_summary, "SalesSummaryByYearTable", [SALES_MARGIN_COL]))
     if result.sales_top_sku_by_year is not None and not result.sales_top_sku_by_year.empty:
-        sheets.append(("Top SKU by Year", result.sales_top_sku_by_year, "TopSKUByYearTable", []))
+        sheets.append(("Top SKU by Year", result.sales_top_sku_by_year, "TopSKUByYearTable", [SALES_MARGIN_COL]))
     if result.purchase_summary is not None:
         if result.purchase_sku_summary is not None and not result.purchase_sku_summary.empty:
             sheets.append(("Purchase by SKU", result.purchase_sku_summary, "PurchaseBySKUTable", []))
+    if "top_profit_table" in result.insights and not result.insights["top_profit_table"].empty:
+        sheets.append(("Top Profit SKUs", result.insights["top_profit_table"], "TopProfitSKUTable", [SALES_MARGIN_COL, "Contribution %", "Cumulative %", "Margin %"]))
+    if "low_sales_margin_table" in result.insights and not result.insights["low_sales_margin_table"].empty:
+        sheets.append(("Low Sales Margin Review", result.insights["low_sales_margin_table"], "LowSalesMarginTable", [SALES_MARGIN_COL, "Contribution %", "Cumulative %", "Margin %"]))
     if result.insights.get("catalogue_present"):
         if "category_summary" in result.insights:
             sheets.append(("Category Summary", result.insights["category_summary"], "CategorySummaryTable", ["Qty Share"]))
@@ -1489,6 +1617,12 @@ def make_amount_trend_chart_png(df: pd.DataFrame) -> str | None:
     )
 
 
+def make_margin_trend_chart_png(df: pd.DataFrame) -> str | None:
+    if SALES_MARGIN_COL not in df.columns or not pd.to_numeric(df[SALES_MARGIN_COL], errors="coerce").notna().any():
+        return None
+    return make_line_chart_png(df, [SALES_MARGIN_COL], "Sales Margin Trend", "Margin %", "{:.0%}")
+
+
 def set_doc_styles(doc: Document):
     styles = doc.styles
     normal = styles["Normal"]
@@ -1651,6 +1785,8 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
         "These items should be treated as the commercial priority group: protect availability, review PO timing first, and use them as the anchor products for channel growth."
     )
     add_bullet(doc, f"{insights['urgent_count']:,} SKUs need immediate replenishment attention; {insights['overstock_count']:,} SKUs show overstock risk.")
+    if pd.notna(insights.get("avg_sales_margin", np.nan)):
+        add_bullet(doc, f"Current sales margin analysis is available: average SKU-level sales margin is {insights['avg_sales_margin']:.1%}.")
     if result.sales_purchase_year_summary is not None and not result.sales_purchase_year_summary.empty:
         trend = result.sales_purchase_year_summary.sort_values("Year")
         first = trend.iloc[0]
@@ -1661,6 +1797,9 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
             f"Sales Qty changed from {first.get('Sales Qty', 0):,.0f} to {last.get('Sales Qty', 0):,.0f}, and PO Cost / Sales Qty moved from "
             f"{first.get(COST_PER_UNIT_COL, np.nan):,.2f} to {last.get(COST_PER_UNIT_COL, np.nan):,.2f}."
         )
+        if SALES_MARGIN_COL in trend.columns and pd.to_numeric(trend[SALES_MARGIN_COL], errors="coerce").notna().any():
+            best_margin = trend.loc[pd.to_numeric(trend[SALES_MARGIN_COL], errors="coerce").idxmax()]
+            add_bullet(doc, f"Best sales margin year: {int(best_margin['Year'])}, with {best_margin[SALES_MARGIN_COL]:.1%} margin.")
     if has_catalogue and "priced_sku_count" in insights:
         add_bullet(
             doc,
@@ -1695,6 +1834,9 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     explanation = pd.DataFrame(
         [
             ["Qty", f"Total SKU quantity sold in the current analysis period ({current_year} when year-labeled sales files are uploaded)"],
+            [SALES_AMOUNT_COL, "Sales revenue from the Sales report when the uploaded file includes an amount column"],
+            [PROFIT_COL, "Profit from the Sales report; if Sales Amount exists but Profit is not exported, yearly/location views can estimate it as Sales Amount - PO Cost"],
+            [SALES_MARGIN_COL, "Profit / Sales Amount. If only a margin column is uploaded, it is used as the sales margin indicator."],
             ["Contribution %", "SKU Qty / Total Qty"],
             ["Cumulative %", "Running contribution after sorting by Qty"],
             ["SABC Type", "S <= 5%, A <= 80%, B <= 95%, C > 95%"],
@@ -1735,6 +1877,9 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
             doc.add_picture(amount_trend_png, width=Inches(6.5))
         else:
             doc.add_paragraph("Sales Amount and Profit are blank because the uploaded Sales reports do not include amount/profit columns.")
+        margin_trend_png = make_margin_trend_chart_png(result.sales_purchase_year_summary)
+        if margin_trend_png:
+            doc.add_picture(margin_trend_png, width=Inches(6.5))
     elif result.sales_year_summary is not None and not result.sales_year_summary.empty:
         doc.add_heading("Sales Trend by Year", level=1)
         add_table(doc, result.sales_year_summary, max_rows=10)
@@ -1764,6 +1909,26 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     doc.add_heading(f"Inventory Coverage Analysis ({current_year} Sales + Current Stock)", level=2)
     doc.add_paragraph(f"Coverage translates current stock into months of demand using {current_year} sales. Low coverage creates service risk; excessive coverage creates cash and warehouse pressure.")
     add_table(doc, result.inventory_status_summary, max_rows=10)
+
+    if (PROFIT_COL in result.final.columns and pd.to_numeric(result.final[PROFIT_COL], errors="coerce").notna().any()) or (
+        SALES_MARGIN_COL in result.final.columns and pd.to_numeric(result.final[SALES_MARGIN_COL], errors="coerce").notna().any()
+    ):
+        doc.add_heading(f"Profitability Analysis ({current_year})", level=2)
+        doc.add_paragraph(
+            f"This view adds profit and sales margin to the {current_year} SKU analysis, so high-volume products can be separated from high-profit products."
+        )
+        avg_sales_margin = insights.get("avg_sales_margin", np.nan)
+        if pd.notna(avg_sales_margin):
+            add_bullet(doc, f"Average sales margin across SKUs with margin data: {avg_sales_margin:.1%}.")
+        if "top_profit_table" in insights and not insights["top_profit_table"].empty:
+            doc.add_heading("Top Profit SKUs", level=2)
+            profit_cols = ["Product SKU", "Product Name", "Qty", SALES_AMOUNT_COL, PROFIT_COL, SALES_MARGIN_COL, "SABC Type", "Inventory Status", "Action"]
+            add_table(doc, insights["top_profit_table"][[col for col in profit_cols if col in insights["top_profit_table"].columns]], max_rows=10)
+        if "low_sales_margin_table" in insights and not insights["low_sales_margin_table"].empty:
+            doc.add_heading("Low Sales Margin Review", level=2)
+            doc.add_paragraph("These SKUs have sales activity but weaker margin, so they should be reviewed before heavy promotion or large replenishment.")
+            margin_cols = ["Product SKU", "Product Name", "Qty", SALES_AMOUNT_COL, PROFIT_COL, SALES_MARGIN_COL, "SABC Type", "Inventory Status", "Action"]
+            add_table(doc, insights["low_sales_margin_table"][[col for col in margin_cols if col in insights["low_sales_margin_table"].columns]], max_rows=10)
 
     if has_catalogue:
         add_catalogue_report_sections(doc, insights)
