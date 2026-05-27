@@ -31,6 +31,8 @@ TEXT = {
         "purchase_2025": "Upload 2025 PO with lines",
         "purchase_2026": "Upload 2026 YTD PO with lines",
         "purchase_keyword": "Brand / product filter keyword",
+        "location_filter": "Location filter",
+        "location_filter_help": "Optional. Use this when Sales is exported for one location but PO/Stock are not location-filtered.",
         "brand": "Brand name",
         "generate": "Generate Analysis",
         "missing_files": "Upload the Sales Report and Stock Levels Report to begin.",
@@ -104,6 +106,8 @@ TEXT = {
         "purchase_2025": "\u4e0a\u4f20 2025 PO with lines",
         "purchase_2026": "\u4e0a\u4f20 2026 YTD PO with lines",
         "purchase_keyword": "\u54c1\u724c / \u4ea7\u54c1\u7b5b\u9009\u5173\u952e\u8bcd",
+        "location_filter": "Location \u7b5b\u9009",
+        "location_filter_help": "\u53ef\u9009\u3002\u5982\u679c Sales \u662f\u4f60\u5df2\u7ecf\u5728\u7cfb\u7edf\u91cc\u6309\u67d0\u4e2a location \u5bfc\u51fa\u7684\uff0c\u4f46 PO/Stock \u662f\u5168\u91cf\uff0c\u5c31\u5728\u8fd9\u91cc\u586b\u540c\u4e00\u4e2a location\u3002",
         "brand": "\u54c1\u724c\u540d\u79f0",
         "generate": "\u751f\u6210\u5206\u6790",
         "missing_files": "\u8bf7\u5148\u4e0a\u4f20\u9500\u552e\u62a5\u8868\u548c\u5e93\u5b58\u62a5\u8868\u3002",
@@ -513,6 +517,7 @@ def bp_generator_page(t: dict, language: str):
         purchase_2025 = st.file_uploader(t["purchase_2025"], type=["xlsx", "xls"], key="purchase_2025")
         purchase_2026 = st.file_uploader(t["purchase_2026"], type=["xlsx", "xls"], key="purchase_2026")
         purchase_keyword = st.text_input(t["purchase_keyword"], value="", placeholder="MILLEFEE / JUDYDOLL / JOOCYEE")
+        location_filter = st.text_input(t["location_filter"], value="", placeholder="Toronto New / Vancouver", help=t["location_filter_help"])
         brand_name = st.text_input(t["brand"], value="", placeholder="MilleFee / Judydoll / Joocyee")
         generate = st.button(t["generate"], type="primary", use_container_width=True)
 
@@ -545,6 +550,7 @@ def bp_generator_page(t: dict, language: str):
                     purchase_years if purchase_files else None,
                     brand_name=clean_brand_name(brand_name),
                     sales_years=sales_years,
+                    location_filter=location_filter.strip(),
                 )
             except Exception as exc:
                 st.error(f"{t['failed']}: {exc}")
