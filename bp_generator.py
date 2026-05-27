@@ -2035,6 +2035,7 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
         "Incoming",
         "On Hand",
         "Future Inventory",
+        "Avg Monthly Sales",
         "Coverage",
         "Inventory Status",
         "Action",
@@ -2048,6 +2049,10 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
             "Incoming": "Incoming (2026)",
             "On Hand": "On Hand (2026)",
             "Future Inventory": "Future Inventory (2026)",
+            "Avg Monthly Sales": "Avg Monthly Sales (2026)",
+            "Coverage": "Coverage (2026)",
+            "Inventory Status": "Inventory Status (2026)",
+            "Action": "Action (2026)",
         }
     )
     enriched = enriched.merge(final_match, on="_match_sku", how="left")
@@ -2088,14 +2093,14 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
         "Incoming (2026)",
         "On Hand (2026)",
         "Future Inventory (2026)",
-        "Coverage",
-        "Inventory Status",
-        "Action",
-        TOTAL_PO_COST_COL,
+        "Avg Monthly Sales (2026)",
+        "Coverage (2026)",
+        "Inventory Status (2026)",
+        "Action (2026)",
     ]
     original_cols = [col for col in catalogue_df.columns if col in enriched.columns]
     appended_cols = [col for col in ordered_new_cols if col in enriched.columns]
-    other_cols = [col for col in enriched.columns if col not in original_cols + appended_cols + ["_match_sku"]]
+    other_cols = [col for col in enriched.columns if col not in original_cols + appended_cols + ["_match_sku", TOTAL_PO_COST_COL]]
     append_data = enriched[["_match_sku"] + appended_cols + other_cols]
     append_data = drop_all_empty_columns(append_data, [col for col in append_data.columns if "Sales Amount" in str(col)])
     append_cols = [col for col in append_data.columns if col != "_match_sku"]
