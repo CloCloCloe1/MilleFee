@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -220,13 +221,14 @@ EXPLANATIONS = {
             "SKU Count": "Number of SKUs sold in that year.",
             "Sales Qty": "Total sales quantity for the uploaded sales file assigned to that year.",
             "Sales Amount ($ CAD)": "Sales revenue amount for that year when the sales report includes an amount column.",
-            "Profit ($ CAD)": "Profit from the sales report for that year when available.",
+            "Profit ($ CAD)": "Profit from the sales report when available. If Sales Amount exists but Profit does not, this is estimated as Sales Amount - PO Cost.",
         },
         "Sales vs PO by Year": {
             "Year": "Year used to connect the sales file and PO file.",
             "Sales Qty": "Sales quantity from the uploaded sales file for that year.",
+            "Purchase Qty": "Total purchased quantity from the uploaded PO file for that year after brand and location filters.",
             "Sales Amount ($ CAD)": "Sales revenue from the sales report for that year when available.",
-            "Profit ($ CAD)": "Profit from the sales report for that year when available.",
+            "Profit ($ CAD)": "Profit from the sales report when available. If Sales Amount exists but Profit does not, this is estimated as Sales Amount - PO Cost.",
             "PO Cost ($ CAD)": "Total PO line cost for that year after brand and location filters. This is the purchasing/inbound cost, not sales revenue.",
             "PO Cost / Sales Qty ($ CAD)": "PO cost divided by units sold. Lower is usually better because less purchasing cost was needed per unit sold, but read it together with current stock and replenishment needs.",
             "PO Cost / Sales Amount": "PO cost divided by sales revenue when sales amount is available. Lower usually means better sales efficiency versus purchase cost.",
@@ -242,8 +244,9 @@ EXPLANATIONS = {
             "Location": "Location detected from Sales, Stock, or PO files.",
             "Sales Qty": "Sales quantity in this year and location when Sales Report includes date and location.",
             "Sales Amount ($ CAD)": "Sales revenue in this year and location when a sales amount column is available.",
-            "Profit ($ CAD)": "Profit in this year and location when available.",
+            "Profit ($ CAD)": "Profit in this year and location when available, or Sales Amount - PO Cost when Sales Amount exists but Profit is not exported.",
             "PO Cost ($ CAD)": "PO cost in this year and location after applying the brand keyword filter.",
+            "Purchase Qty": "Purchased quantity in this year and location after applying the brand keyword filter.",
             "Available / Incoming / On Hand / Future Inventory": "Current stock values from today's stock report. These are not historical 2024 or 2025 inventory numbers.",
         },
     },
@@ -311,8 +314,9 @@ EXPLANATIONS = {
         "Sales vs PO by Year": {
             "Year": "\u7528\u4e8e\u8fde\u63a5 Sales file \u548c PO file \u7684\u5e74\u4efd\u3002",
             "Sales Qty": "\u8be5\u5e74\u4e0a\u4f20 sales file \u4e2d\u7684\u9500\u91cf\u3002",
+            "Purchase Qty": "\u8be5\u5e74\u4e0a\u4f20 PO file \u4e2d\uff0c\u7b5b\u9009\u54c1\u724c\u548c location \u540e\u7684\u91c7\u8d2d\u6570\u91cf\u3002",
             "Sales Amount ($ CAD)": "\u5982 sales report \u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u8be5\u5e74\u9500\u552e\u989d\u3002",
-            "Profit ($ CAD)": "\u5982 sales report \u6709 profit \u5217\uff0c\u5219\u4e3a\u8be5\u5e74\u5229\u6da6\u3002",
+            "Profit ($ CAD)": "\u5982 sales report \u6709 profit \u5217\uff0c\u5219\u4e3a\u8be5\u5e74\u5229\u6da6\uff1b\u5982\u679c\u6709 Sales Amount \u4f46\u6ca1\u6709 Profit\uff0c\u5219\u7528 Sales Amount - PO Cost \u4f30\u7b97\u3002",
             "PO Cost ($ CAD)": "\u8be5\u5e74\u4e0a\u4f20 PO file \u4e2d\uff0c\u7b5b\u9009\u54c1\u724c\u548c location \u540e\u7684 PO line \u8fdb\u8d27\u6210\u672c\u3002",
             "PO Cost / Sales Qty ($ CAD)": "PO Cost / Sales Qty\uff0c\u8868\u793a\u6bcf\u5356\u51fa 1 \u4ef6\u5bf9\u5e94\u7684\u8fdb\u8d27\u6210\u672c\u5f3a\u5ea6\u3002\u901a\u5e38\u8d8a\u4f4e\u8d8a\u597d\uff0c\u4f46\u8981\u7ed3\u5408\u5f53\u524d\u5e93\u5b58\u548c\u662f\u5426\u9700\u8981\u8865\u8d27\u4e00\u8d77\u770b\u3002",
             "PO Cost / Sales Amount": "\u5982\u6709\u9500\u552e\u989d\uff0c\u5219\u4e3a PO Cost / Sales Amount\u3002\u901a\u5e38\u8d8a\u4f4e\u4ee3\u8868\u91c7\u8d2d\u6210\u672c\u76f8\u5bf9\u9500\u552e\u989d\u66f4\u6709\u6548\u7387\u3002",
@@ -328,8 +332,9 @@ EXPLANATIONS = {
             "Location": "\u4ece Sales\u3001Stock \u6216 PO \u6587\u4ef6\u4e2d\u8bc6\u522b\u5230\u7684 location\u3002",
             "Sales Qty": "\u5982 Sales Report \u6709\u65e5\u671f\u548c location\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u9500\u91cf\u3002",
             "Sales Amount ($ CAD)": "\u5982 Sales Report \u6709\u91d1\u989d\u5217\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u9500\u552e\u989d\u3002",
-            "Profit ($ CAD)": "\u5982 Sales Report \u6709 profit \u5217\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u5229\u6da6\u3002",
+            "Profit ($ CAD)": "\u5982 Sales Report \u6709 profit \u5217\uff0c\u5219\u4e3a\u8be5\u5e74 + location \u7684\u5229\u6da6\uff1b\u5982\u679c\u6709 Sales Amount \u4f46\u6ca1\u6709 Profit\uff0c\u5219\u7528 Sales Amount - PO Cost \u4f30\u7b97\u3002",
             "PO Cost ($ CAD)": "\u5957\u7528\u54c1\u724c\u5173\u952e\u8bcd\u7b5b\u9009\u540e\uff0c\u8be5\u5e74 + location \u7684 PO \u8fdb\u8d27\u6210\u672c\u3002",
+            "Purchase Qty": "\u5957\u7528\u54c1\u724c\u5173\u952e\u8bcd\u7b5b\u9009\u540e\uff0c\u8be5\u5e74 + location \u7684\u91c7\u8d2d\u6570\u91cf\u3002",
             "Available / Incoming / On Hand / Future Inventory": "\u8fd9\u662f\u4eca\u5929 stock report \u7684\u5f53\u524d\u5e93\u5b58\u503c\uff0c\u4e0d\u662f 2024 \u6216 2025 \u7684\u5386\u53f2\u5e93\u5b58\u3002",
         },
     },
@@ -420,24 +425,45 @@ def chart_ready(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
 
 
 def show_sales_po_charts(df: pd.DataFrame):
-    trend = chart_ready(df, ["Year", "Sales Qty", "PO Cost ($ CAD)", "PO Cost / Sales Qty ($ CAD)"])
-    if "Year" in trend and not trend.empty:
-        trend = trend.set_index("Year")
-        st.line_chart(trend[[col for col in ["Sales Qty", "PO Cost / Sales Qty ($ CAD)"] if col in trend.columns]])
-        if "PO Cost ($ CAD)" in trend.columns:
-            st.bar_chart(trend[["PO Cost ($ CAD)"]])
+    trend = chart_ready(df, ["Year", "Sales Qty", "Purchase Qty", "Sales Amount ($ CAD)", "PO Cost ($ CAD)", "Profit ($ CAD)"])
+    if "Year" not in trend or trend.empty:
+        return
+    trend = trend.sort_values("Year").copy()
+    trend["Year"] = trend["Year"].astype(int).astype(str)
 
+    qty_cols = [col for col in ["Sales Qty", "Purchase Qty"] if col in trend.columns and trend[col].notna().any()]
+    if qty_cols:
+        qty_data = trend.melt("Year", value_vars=qty_cols, var_name="Metric", value_name="Qty").dropna(subset=["Qty"])
+        qty_chart = (
+            alt.Chart(qty_data)
+            .mark_line(point=True, strokeWidth=3)
+            .encode(
+                x=alt.X("Year:O", title="Year", sort=trend["Year"].tolist()),
+                y=alt.Y("Qty:Q", title="Qty"),
+                color=alt.Color("Metric:N", title="Metric"),
+                tooltip=["Year", "Metric", alt.Tooltip("Qty:Q", format=",.0f")],
+            )
+            .properties(title="Sales Qty vs Purchase Qty", height=300)
+        )
+        st.altair_chart(qty_chart, use_container_width=True)
 
-def show_summary_charts(sabc_df: pd.DataFrame, status_df: pd.DataFrame):
-    cols = st.columns(2)
-    with cols[0]:
-        if not sabc_df.empty:
-            sabc_chart = chart_ready(sabc_df, ["SABC Type", "Qty"]).set_index("SABC Type")
-            st.bar_chart(sabc_chart)
-    with cols[1]:
-        if not status_df.empty:
-            status_chart = chart_ready(status_df, ["Inventory Status", "SKU_Count"]).set_index("Inventory Status")
-            st.bar_chart(status_chart)
+    amount_cols = [col for col in ["Sales Amount ($ CAD)", "PO Cost ($ CAD)", "Profit ($ CAD)"] if col in trend.columns and trend[col].notna().any()]
+    if "Sales Amount ($ CAD)" not in amount_cols:
+        st.info("Sales Amount and Profit are blank because the uploaded Sales reports do not include amount/profit columns.")
+        return
+    amount_data = trend.melt("Year", value_vars=amount_cols, var_name="Metric", value_name="Amount").dropna(subset=["Amount"])
+    amount_chart = (
+        alt.Chart(amount_data)
+        .mark_line(point=True, strokeWidth=3)
+        .encode(
+            x=alt.X("Year:O", title="Year", sort=trend["Year"].tolist()),
+            y=alt.Y("Amount:Q", title="Amount ($ CAD)"),
+            color=alt.Color("Metric:N", title="Metric"),
+            tooltip=["Year", "Metric", alt.Tooltip("Amount:Q", format="$,.2f")],
+        )
+        .properties(title="Sales Amount vs Purchase Cost and Profit", height=300)
+    )
+    st.altair_chart(amount_chart, use_container_width=True)
 
 
 def apply_styles():
@@ -623,14 +649,12 @@ def bp_generator_page(t: dict, language: str):
             sales_year_view[col] = sales_year_view[col].map(lambda x: "" if pd.isna(x) else f"{x:,.2f}")
         st.dataframe(sales_year_view, use_container_width=True, hide_index=True)
 
-    if result.purchase_summary is not None:
-        pass
     if result.location_year_business_view is not None and not result.location_year_business_view.empty:
         st.subheader(t["location_year_view"])
         show_column_notes(language, "Latest Inventory View")
         location_year_view = result.location_year_business_view.copy()
         for col in [c for c in location_year_view.columns if "($ CAD)" in c]:
-            location_year_view[col] = location_year_view[col].map(lambda x: f"{x:,.2f}")
+            location_year_view[col] = location_year_view[col].map(lambda x: "" if pd.isna(x) else f"{x:,.2f}")
         st.dataframe(location_year_view, use_container_width=True, hide_index=True)
 
     download_cols = st.columns(2)
@@ -656,7 +680,6 @@ def bp_generator_page(t: dict, language: str):
         st.dataframe(view, use_container_width=True, height=520)
 
     with tab2:
-        show_summary_charts(result.sabc_summary, result.inventory_status_summary)
         left, right = st.columns(2)
         with left:
             st.subheader(t["sabc_summary"])

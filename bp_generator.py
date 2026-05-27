@@ -18,8 +18,8 @@ from docx.enum.table import WD_ALIGN_VERTICAL
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
 from openpyxl import Workbook
-from openpyxl.chart import BarChart, LineChart, PieChart, Reference
-from openpyxl.formatting.rule import CellIsRule, FormulaRule
+from openpyxl.chart import LineChart, Reference
+from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
@@ -680,6 +680,10 @@ def build_purchase_summary(
             pd.to_numeric(work[qty_col], errors="coerce").fillna(0)
             * pd.to_numeric(work[unit_cost_col], errors="coerce").fillna(0)
         )
+    if qty_col:
+        work["_purchase_qty"] = pd.to_numeric(work[qty_col], errors="coerce").fillna(0)
+    else:
+        work["_purchase_qty"] = 0
 
     current_year = datetime.now().year
     current_date = pd.Timestamp(datetime.now().date())
@@ -697,6 +701,7 @@ def build_purchase_summary(
             {
                 "Year": year,
                 "Period": period,
+                "Purchase Qty": float(subset["_purchase_qty"].sum()),
                 PO_COST_COL: float(subset["_purchase_amount"].sum()),
             }
         )
@@ -715,7 +720,6 @@ def build_purchase_summary(
         year_amount = work.pivot_table(index=group_cols, columns="_year", values="_purchase_amount", aggfunc="sum", fill_value=0).reset_index()
         year_amount.columns = [f"{int(col)} PO Cost ($ CAD)" if isinstance(col, (int, float, np.integer, np.floating)) else col for col in year_amount.columns]
         if qty_col:
-            work["_purchase_qty"] = pd.to_numeric(work[qty_col], errors="coerce").fillna(0)
             year_qty = work.pivot_table(index=group_cols, columns="_year", values="_purchase_qty", aggfunc="sum", fill_value=0).reset_index()
             year_qty.columns = [f"{int(col)} Purchase Qty" if isinstance(col, (int, float, np.integer, np.floating)) else col for col in year_qty.columns]
             sku_summary = sku_summary.merge(year_amount, on=group_cols, how="left").merge(year_qty, on=group_cols, how="left")
@@ -755,7 +759,6 @@ def build_purchase_summary(
 
         aggregations = {PO_COST_COL: ("_purchase_amount", "sum")}
         if qty_col:
-            work["_purchase_qty"] = pd.to_numeric(work[qty_col], errors="coerce").fillna(0)
             aggregations["Purchase Qty"] = ("_purchase_qty", "sum")
         year_location_summary = (
             work[work["_year"].notna()]
@@ -834,6 +837,11 @@ def build_latest_year_inventory_view(
     for col in [SALES_AMOUNT_COL, PROFIT_COL]:
         if col in view.columns:
             view[col] = pd.to_numeric(view[col], errors="coerce")
+    if PROFIT_COL not in view.columns and {SALES_AMOUNT_COL, PO_COST_COL}.issubset(view.columns):
+        view[PROFIT_COL] = np.where(view[SALES_AMOUNT_COL].notna(), view[SALES_AMOUNT_COL] - view[PO_COST_COL], np.nan)
+    elif {PROFIT_COL, SALES_AMOUNT_COL, PO_COST_COL}.issubset(view.columns):
+        missing_profit = view[PROFIT_COL].isna() & view[SALES_AMOUNT_COL].notna()
+        view.loc[missing_profit, PROFIT_COL] = view.loc[missing_profit, SALES_AMOUNT_COL] - view.loc[missing_profit, PO_COST_COL]
     ordered = [
         "Year",
         "Location",
@@ -865,16 +873,24 @@ def build_sales_purchase_year_summary(
                 cols.append(col)
         view = sales_year_summary[cols].copy()
     if purchase_summary is not None and not purchase_summary.empty:
-        purchase_view = purchase_summary[["Year", PO_COST_COL]].copy()
+        purchase_cols = ["Year", PO_COST_COL]
+        if "Purchase Qty" in purchase_summary.columns:
+            purchase_cols.append("Purchase Qty")
+        purchase_view = purchase_summary[purchase_cols].copy()
         view = purchase_view if view is None else view.merge(purchase_view, on="Year", how="outer")
     if view is None or view.empty:
         return None
-    for col in ["SKU Count", "Sales Qty", PO_COST_COL]:
+    for col in ["SKU Count", "Sales Qty", "Purchase Qty", PO_COST_COL]:
         if col in view.columns:
             view[col] = pd.to_numeric(view[col], errors="coerce").fillna(0)
     for col in [SALES_AMOUNT_COL, PROFIT_COL]:
         if col in view.columns:
             view[col] = pd.to_numeric(view[col], errors="coerce")
+    if PROFIT_COL not in view.columns and {SALES_AMOUNT_COL, PO_COST_COL}.issubset(view.columns):
+        view[PROFIT_COL] = np.where(view[SALES_AMOUNT_COL].notna(), view[SALES_AMOUNT_COL] - view[PO_COST_COL], np.nan)
+    elif {PROFIT_COL, SALES_AMOUNT_COL, PO_COST_COL}.issubset(view.columns):
+        missing_profit = view[PROFIT_COL].isna() & view[SALES_AMOUNT_COL].notna()
+        view.loc[missing_profit, PROFIT_COL] = view.loc[missing_profit, SALES_AMOUNT_COL] - view.loc[missing_profit, PO_COST_COL]
     if {PO_COST_COL, "Sales Qty"}.issubset(view.columns):
         view[COST_PER_UNIT_COL] = np.where(view["Sales Qty"] > 0, view[PO_COST_COL] / view["Sales Qty"], np.nan)
     if {PO_COST_COL, SALES_AMOUNT_COL}.issubset(view.columns):
@@ -883,6 +899,7 @@ def build_sales_purchase_year_summary(
         "Year",
         "SKU Count",
         "Sales Qty",
+        "Purchase Qty",
         SALES_AMOUNT_COL,
         PROFIT_COL,
         PO_COST_COL,
@@ -1242,49 +1259,42 @@ def style_sheet(ws, percent_cols: Iterable[str] = ()):
 
 def add_excel_dashboard_charts(wb: Workbook):
     ws = wb["Final Analysis"]
-    status_ws = wb["Inventory Status Summary"]
-    sabc_ws = wb["SABC Summary"]
     if "Sales PO Year Compare" in wb.sheetnames:
         trend_ws = wb["Sales PO Year Compare"]
         headers = [cell.value for cell in trend_ws[1]]
-        if trend_ws.max_row > 1 and "Sales Qty" in headers and COST_PER_UNIT_COL in headers:
+        cats = Reference(trend_ws, min_col=1, min_row=2, max_row=trend_ws.max_row)
+        if trend_ws.max_row > 1 and "Sales Qty" in headers and "Purchase Qty" in headers:
             line = LineChart()
-            line.title = "Sales Qty and PO Cost per Unit Trend"
-            line.y_axis.title = "Value"
+            line.title = "Sales Qty vs Purchase Qty"
+            line.y_axis.title = "Qty"
             line.x_axis.title = "Year"
             sales_col = headers.index("Sales Qty") + 1
-            cost_unit_col = headers.index(COST_PER_UNIT_COL) + 1
-            cats = Reference(trend_ws, min_col=1, min_row=2, max_row=trend_ws.max_row)
+            purchase_qty_col = headers.index("Purchase Qty") + 1
             sales_data = Reference(trend_ws, min_col=sales_col, max_col=sales_col, min_row=1, max_row=trend_ws.max_row)
-            cost_unit_data = Reference(trend_ws, min_col=cost_unit_col, max_col=cost_unit_col, min_row=1, max_row=trend_ws.max_row)
+            purchase_data = Reference(trend_ws, min_col=purchase_qty_col, max_col=purchase_qty_col, min_row=1, max_row=trend_ws.max_row)
             line.add_data(sales_data, titles_from_data=True)
-            line.add_data(cost_unit_data, titles_from_data=True)
+            line.add_data(purchase_data, titles_from_data=True)
             line.set_categories(cats)
             line.height = 7
             line.width = 13
-            ws.add_chart(line, "P34")
-    if status_ws.max_row > 1:
-        chart = BarChart()
-        chart.title = "Inventory Status by SKU Count"
-        chart.y_axis.title = "SKU Count"
-        chart.x_axis.title = "Status"
-        data = Reference(status_ws, min_col=2, min_row=1, max_row=status_ws.max_row)
-        cats = Reference(status_ws, min_col=1, min_row=2, max_row=status_ws.max_row)
-        chart.add_data(data, titles_from_data=True)
-        chart.set_categories(cats)
-        chart.height = 7
-        chart.width = 12
-        ws.add_chart(chart, "P2")
-    if sabc_ws.max_row > 1:
-        pie = PieChart()
-        pie.title = "Qty Share by SABC"
-        data = Reference(sabc_ws, min_col=6, min_row=1, max_row=sabc_ws.max_row)
-        cats = Reference(sabc_ws, min_col=1, min_row=2, max_row=sabc_ws.max_row)
-        pie.add_data(data, titles_from_data=True)
-        pie.set_categories(cats)
-        pie.height = 7
-        pie.width = 10
-        ws.add_chart(pie, "P18")
+            ws.add_chart(line, "P2")
+        if trend_ws.max_row > 1 and SALES_AMOUNT_COL in headers and PO_COST_COL in headers:
+            sales_amount_col = headers.index(SALES_AMOUNT_COL) + 1
+            amount_values = [trend_ws.cell(row=row, column=sales_amount_col).value for row in range(2, trend_ws.max_row + 1)]
+            if any(value not in (None, "") and pd.notna(value) for value in amount_values):
+                amount_line = LineChart()
+                amount_line.title = "Sales Amount vs Purchase Cost and Profit"
+                amount_line.y_axis.title = "Amount ($ CAD)"
+                amount_line.x_axis.title = "Year"
+                for header in [SALES_AMOUNT_COL, PO_COST_COL, PROFIT_COL]:
+                    if header in headers:
+                        col_idx = headers.index(header) + 1
+                        data = Reference(trend_ws, min_col=col_idx, max_col=col_idx, min_row=1, max_row=trend_ws.max_row)
+                        amount_line.add_data(data, titles_from_data=True)
+                amount_line.set_categories(cats)
+                amount_line.height = 7
+                amount_line.width = 13
+                ws.add_chart(amount_line, "P18")
 
 
 def generate_excel(result: AnalysisResult) -> bytes:
@@ -1395,11 +1405,18 @@ def make_sabc_chart_png(df: pd.DataFrame) -> str:
     return make_bar_chart_png(df.sort_values("Qty", ascending=False), "SABC Type", "Qty", "Sales Quantity by SABC Type")
 
 
-def make_trend_chart_png(df: pd.DataFrame) -> str:
-    data = df[["Year", "Sales Qty", PO_COST_COL, COST_PER_UNIT_COL]].copy()
-    for col in ["Sales Qty", PO_COST_COL, COST_PER_UNIT_COL]:
-        data[col] = pd.to_numeric(data[col], errors="coerce")
+def make_line_chart_png(df: pd.DataFrame, value_cols: list[str], title: str, y_title: str, value_format: str = "{:,.0f}") -> str | None:
+    cols = ["Year"] + [col for col in value_cols if col in df.columns]
+    if len(cols) <= 1:
+        return None
+    data = df[cols].copy()
+    for col in cols:
+        if col != "Year":
+            data[col] = pd.to_numeric(data[col], errors="coerce")
     data = data.sort_values("Year").dropna(subset=["Year"])
+    data_cols = [col for col in cols if col != "Year" and data[col].notna().any()]
+    if not data_cols:
+        return None
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
     width, height = 900, 440
     img = Image.new("RGB", (width, height), "white")
@@ -1407,43 +1424,39 @@ def make_trend_chart_png(df: pd.DataFrame) -> str:
     title_font = try_font(24, True)
     label_font = try_font(14)
     small_font = try_font(12)
-    draw.text((32, 24), "Sales and PO Cost Trend (Indexed)", fill=f"#{ACCENT}", font=title_font)
+    draw.text((32, 24), title, fill=f"#{ACCENT}", font=title_font)
     left, top, right, bottom = 78, 92, width - 42, height - 76
     draw.line((left, bottom, right, bottom), fill="#D2D2D7", width=2)
     draw.line((left, top, left, bottom), fill="#D2D2D7", width=2)
+    draw.text((18, top - 30), y_title, fill=f"#{MID_GRAY}", font=small_font)
     years = data["Year"].astype(int).tolist()
     if len(years) <= 1:
         img.save(tmp.name, "PNG")
         return tmp.name
-    series = [
-        ("Sales Qty", "0071E3"),
-        (PO_COST_COL, "1F8A5B"),
-        (COST_PER_UNIT_COL, "D92D20"),
-    ]
-    indexed = {}
-    max_value = 100.0
-    min_value = 100.0
+    palette = ["0071E3", "1F8A5B", "D92D20", "7B61FF"]
+    series = list(zip(data_cols, palette))
+    max_value = 0.0
+    min_value = 0.0
+    clean_by_series = {}
     for name, _ in series:
         values = data[name].astype(float).tolist()
-        base = next((v for v in values if pd.notna(v) and v != 0), np.nan)
-        points = [np.nan if pd.isna(v) or pd.isna(base) or base == 0 else v / base * 100 for v in values]
-        indexed[name] = points
-        clean_points = [p for p in points if pd.notna(p)]
+        clean_points = [v for v in values if pd.notna(v)]
+        clean_by_series[name] = values
         if clean_points:
             max_value = max(max_value, max(clean_points))
             min_value = min(min_value, min(clean_points))
-    pad = max((max_value - min_value) * 0.12, 10)
+    pad = max((max_value - min_value) * 0.12, max(max_value * 0.05, 1))
     min_axis, max_axis = max(0, min_value - pad), max_value + pad
     for tick in [min_axis, (min_axis + max_axis) / 2, max_axis]:
         y = bottom - (tick - min_axis) / (max_axis - min_axis) * (bottom - top)
         draw.line((left, y, right, y), fill="#F0F0F2", width=1)
-        draw.text((18, y - 8), f"{tick:,.0f}", fill=f"#{MID_GRAY}", font=small_font)
+        draw.text((18, y - 8), value_format.format(tick), fill=f"#{MID_GRAY}", font=small_font)
     x_positions = [left + i * (right - left) / (len(years) - 1) for i in range(len(years))]
     for x, year in zip(x_positions, years):
         draw.text((x - 16, bottom + 14), str(year), fill=f"#{ACCENT}", font=label_font)
     for name, color in series:
         pts = []
-        for x, value in zip(x_positions, indexed[name]):
+        for x, value in zip(x_positions, clean_by_series[name]):
             if pd.isna(value):
                 continue
             y = bottom - (value - min_axis) / (max_axis - min_axis) * (bottom - top)
@@ -1458,6 +1471,22 @@ def make_trend_chart_png(df: pd.DataFrame) -> str:
         legend_x += 220
     img.save(tmp.name, "PNG")
     return tmp.name
+
+
+def make_qty_trend_chart_png(df: pd.DataFrame) -> str | None:
+    return make_line_chart_png(df, ["Sales Qty", "Purchase Qty"], "Sales Qty vs Purchase Qty", "Qty", "{:,.0f}")
+
+
+def make_amount_trend_chart_png(df: pd.DataFrame) -> str | None:
+    if SALES_AMOUNT_COL not in df.columns or not pd.to_numeric(df[SALES_AMOUNT_COL], errors="coerce").notna().any():
+        return None
+    return make_line_chart_png(
+        df,
+        [SALES_AMOUNT_COL, PO_COST_COL, PROFIT_COL],
+        "Sales Amount vs Purchase Cost and Profit",
+        "Amount ($ CAD)",
+        "${:,.0f}",
+    )
 
 
 def set_doc_styles(doc: Document):
@@ -1698,8 +1727,14 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
             "A lower PO Cost / Sales Qty usually means less purchasing cost was needed for each unit sold, but it should be read together with current stock and future replenishment needs."
         )
         add_table(doc, result.sales_purchase_year_summary, max_rows=10)
-        trend_png = make_trend_chart_png(result.sales_purchase_year_summary)
-        doc.add_picture(trend_png, width=Inches(6.5))
+        qty_trend_png = make_qty_trend_chart_png(result.sales_purchase_year_summary)
+        if qty_trend_png:
+            doc.add_picture(qty_trend_png, width=Inches(6.5))
+        amount_trend_png = make_amount_trend_chart_png(result.sales_purchase_year_summary)
+        if amount_trend_png:
+            doc.add_picture(amount_trend_png, width=Inches(6.5))
+        else:
+            doc.add_paragraph("Sales Amount and Profit are blank because the uploaded Sales reports do not include amount/profit columns.")
     elif result.sales_year_summary is not None and not result.sales_year_summary.empty:
         doc.add_heading("Sales Trend by Year", level=1)
         add_table(doc, result.sales_year_summary, max_rows=10)
@@ -1725,14 +1760,10 @@ def generate_word_report(result: AnalysisResult, brand_name: str = "Brand") -> b
     doc.add_heading(f"SABC Sales Analysis ({current_year})", level=2)
     doc.add_paragraph(f"The SABC view uses {current_year} sales only, so replenishment can protect current winners while keeping slow movers controlled.")
     add_table(doc, result.sabc_summary, max_rows=10)
-    sabc_png = make_sabc_chart_png(result.sabc_summary)
-    doc.add_picture(sabc_png, width=Inches(6.5))
 
     doc.add_heading(f"Inventory Coverage Analysis ({current_year} Sales + Current Stock)", level=2)
     doc.add_paragraph(f"Coverage translates current stock into months of demand using {current_year} sales. Low coverage creates service risk; excessive coverage creates cash and warehouse pressure.")
     add_table(doc, result.inventory_status_summary, max_rows=10)
-    status_png = make_bar_chart_png(result.inventory_status_summary, "Inventory Status", "SKU_Count", "Inventory Status by SKU Count")
-    doc.add_picture(status_png, width=Inches(6.5))
 
     if has_catalogue:
         add_catalogue_report_sections(doc, insights)
