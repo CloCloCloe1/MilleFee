@@ -24,6 +24,9 @@ TEXT = {
         "stock": "Upload Stock Levels",
         "catalogue": "Optional: Upload Catalogue / Price List",
         "purchase": "Optional: Upload Purchase / PO History",
+        "purchase_2024": "Upload 2024 PO with lines",
+        "purchase_2025": "Upload 2025 PO with lines",
+        "purchase_2026": "Upload 2026 YTD PO with lines",
         "purchase_keyword": "Purchase filter keyword",
         "brand": "Brand name",
         "generate": "Generate Analysis",
@@ -85,6 +88,9 @@ TEXT = {
         "stock": "\u4e0a\u4f20\u5e93\u5b58\u62a5\u8868",
         "catalogue": "\u53ef\u9009\uff1a\u4e0a\u4f20\u4ea7\u54c1\u76ee\u5f55 / \u4ef7\u683c\u8868",
         "purchase": "\u53ef\u9009\uff1a\u4e0a\u4f20\u91c7\u8d2d / PO \u5386\u53f2",
+        "purchase_2024": "\u4e0a\u4f20 2024 PO with lines",
+        "purchase_2025": "\u4e0a\u4f20 2025 PO with lines",
+        "purchase_2026": "\u4e0a\u4f20 2026 YTD PO with lines",
         "purchase_keyword": "\u91c7\u8d2d\u7b5b\u9009\u5173\u952e\u8bcd",
         "brand": "\u54c1\u724c\u540d\u79f0",
         "generate": "\u751f\u6210\u5206\u6790",
@@ -393,7 +399,10 @@ def bp_generator_page(t: dict, language: str):
         sales_file = st.file_uploader(t["sales"], type=["xlsx", "xls"], key="sales")
         stock_file = st.file_uploader(t["stock"], type=["xlsx", "xls"], key="stock")
         catalogue_file = st.file_uploader(t["catalogue"], type=["xlsx", "xls"], key="catalogue")
-        purchase_files = st.file_uploader(t["purchase"], type=["xlsx", "xls"], key="purchase", accept_multiple_files=True)
+        st.caption(t["purchase"])
+        purchase_2024 = st.file_uploader(t["purchase_2024"], type=["xlsx", "xls"], key="purchase_2024")
+        purchase_2025 = st.file_uploader(t["purchase_2025"], type=["xlsx", "xls"], key="purchase_2025")
+        purchase_2026 = st.file_uploader(t["purchase_2026"], type=["xlsx", "xls"], key="purchase_2026")
         purchase_keyword = st.text_input(t["purchase_keyword"], value="", placeholder="MILLEFEE / JUDYDOLL / JOOCYEE")
         brand_name = st.text_input(t["brand"], value="", placeholder="MilleFee / Judydoll / Joocyee")
         generate = st.button(t["generate"], type="primary", use_container_width=True)
@@ -405,12 +414,19 @@ def bp_generator_page(t: dict, language: str):
     if generate:
         with st.spinner(t["spinner"]):
             try:
+                purchase_files = []
+                purchase_years = []
+                for year, file in [(2024, purchase_2024), (2025, purchase_2025), (2026, purchase_2026)]:
+                    if file is not None:
+                        purchase_files.append(load_file(file))
+                        purchase_years.append(year)
                 result, excel_bytes, word_bytes = generate_outputs(
                     load_file(sales_file),
                     load_file(stock_file),
                     load_file(catalogue_file),
-                    [load_file(file) for file in purchase_files] if purchase_files else None,
+                    purchase_files if purchase_files else None,
                     purchase_keyword.strip(),
+                    purchase_years if purchase_files else None,
                     brand_name=clean_brand_name(brand_name),
                 )
             except Exception as exc:

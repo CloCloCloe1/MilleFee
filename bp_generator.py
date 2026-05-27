@@ -372,11 +372,18 @@ def apply_lifecycle_strategy(final: pd.DataFrame) -> pd.DataFrame:
 def build_purchase_summary(
     purchase_file: str | Path | BinaryIO | BytesIO | list[str | Path | BinaryIO | BytesIO] | None,
     purchase_filter_keyword: str = "",
+    purchase_years: list[int] | None = None,
 ) -> tuple[pd.DataFrame | None, pd.DataFrame | None, dict]:
     if purchase_file is None:
         return None, None, {}
     files = purchase_file if isinstance(purchase_file, list) else [purchase_file]
-    df = pd.concat([read_excel_with_detected_header(file) for file in files], ignore_index=True)
+    frames = []
+    for idx, file in enumerate(files):
+        frame = read_excel_with_detected_header(file)
+        if purchase_years and idx < len(purchase_years):
+            frame["_source_year"] = purchase_years[idx]
+        frames.append(frame)
+    df = pd.concat(frames, ignore_index=True)
     date_col = detect_column(
         df,
         ["Creation date", "PO Date", "Purchase Date", "Order Date", "Invoice Date", "Date", "Created At", "Month, Year"],
@@ -408,11 +415,12 @@ def build_purchase_summary(
         "purchase_product": product_col or "Not detected",
         "purchase_barcode": barcode_col or "Not detected",
         "purchase_filter_keyword": purchase_filter_keyword or "Not used",
+        "purchase_year_mode": "Manual upload year" if purchase_years else "Detected from PO date/year",
     }
 
     if amount_col is None and not (qty_col and unit_cost_col):
         raise ValueError("Purchase report needs an Amount column, or both Qty and Unit Cost columns.")
-    if date_col is None and year_col is None:
+    if not purchase_years and date_col is None and year_col is None:
         raise ValueError("Purchase report needs a Date/PO Date column or a Year column.")
 
     work = df.copy()
@@ -426,7 +434,10 @@ def build_purchase_summary(
         for col in text_cols:
             mask = mask | work[col].astype(str).str.contains(keyword, case=False, na=False)
         work = work[mask].copy()
-    if date_col:
+    if purchase_years and "_source_year" in work.columns:
+        work["_year"] = pd.to_numeric(work["_source_year"], errors="coerce")
+        work["_date"] = pd.to_datetime(work[date_col], errors="coerce") if date_col else pd.NaT
+    elif date_col:
         work["_date"] = pd.to_datetime(work[date_col], errors="coerce")
         work["_year"] = work["_date"].dt.year
     else:
@@ -480,11 +491,12 @@ def build_analysis(
     catalogue_file: str | Path | BinaryIO | BytesIO | None = None,
     purchase_file: str | Path | BinaryIO | BytesIO | list[str | Path | BinaryIO | BytesIO] | None = None,
     purchase_filter_keyword: str = "",
+    purchase_years: list[int] | None = None,
 ) -> AnalysisResult:
     sales_df = read_excel_any(sales_file)
     stock_df = read_excel_any(stock_file)
     catalogue_df = read_excel_with_detected_header(catalogue_file) if catalogue_file else None
-    purchase_summary, purchase_sku_summary, purchase_cols = build_purchase_summary(purchase_file, purchase_filter_keyword)
+    purchase_summary, purchase_sku_summary, purchase_cols = build_purchase_summary(purchase_file, purchase_filter_keyword, purchase_years)
 
     sales, sales_cols = aggregate_sales(sales_df)
     stock, stock_cols = aggregate_stock(stock_df)
@@ -1182,9 +1194,10 @@ def generate_outputs(
     sales_file: str | Path | BinaryIO | BytesIO,
     stock_file: str | Path | BinaryIO | BytesIO,
     catalogue_file: str | Path | BinaryIO | BytesIO | None = None,
-    purchase_file: str | Path | BinaryIO | BytesIO | None = None,
+    purchase_file: str | Path | BinaryIO | BytesIO | list[str | Path | BinaryIO | BytesIO] | None = None,
     purchase_filter_keyword: str = "",
+    purchase_years: list[int] | None = None,
     brand_name: str = "Brand",
 ) -> tuple[AnalysisResult, bytes, bytes]:
-    result = build_analysis(sales_file, stock_file, catalogue_file, purchase_file, purchase_filter_keyword)
+    result = build_analysis(sales_file, stock_file, catalogue_file, purchase_file, purchase_filter_keyword, purchase_years)
     return result, generate_excel(result), generate_word_report(result, brand_name=brand_name)
