@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import math
 import re
@@ -49,6 +49,10 @@ CATALOGUE_ANALYSIS_COLS = [
     *(f"{year} Sales Margin %" for year in [2024, 2025, 2026]),
     *(f"{year} Purchase Qty" for year in [2024, 2025, 2026]),
     *(f"{year} PO Cost ($ CAD)" for year in [2024, 2025, 2026]),
+    *(f"{year} Purchase Amount (JPY)" for year in [2024, 2025, 2026]),
+    *(f"{year} Purchase Amount (USD)" for year in [2024, 2025, 2026]),
+    *(f"{year} Purchase Amount (CAD)" for year in [2024, 2025, 2026]),
+    *(f"{year} Purchase Amount (CNY)" for year in [2024, 2025, 2026]),
     "Matched Sales SKUs",
     "SABC Type (2026)",
     "Available (2026)",
@@ -60,6 +64,19 @@ CATALOGUE_ANALYSIS_COLS = [
     "Inventory Status (2026)",
     "Action (2026)",
 ]
+CURRENCY_SYMBOLS = {
+    "JPY": "\u00a5",
+    "CNY": "\u00a5",
+    "RMB": "\u00a5",
+    "USD": "$",
+    "CAD": "$",
+    "AUD": "$",
+    "HKD": "$",
+    "TWD": "$",
+    "EUR": "\u20ac",
+    "GBP": "\u00a3",
+    "KRW": "\u20a9",
+}
 
 
 @dataclass
@@ -87,6 +104,22 @@ class AnalysisResult:
 
 def normalize_header(value: object) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value).strip().lower())
+
+
+def detect_currency_code(value: object) -> str:
+    text = str(value or "").upper().replace("\n", " ")
+    for code in ["JPY", "USD", "CAD", "CNY", "RMB", "KRW", "EUR", "GBP", "AUD", "HKD", "TWD"]:
+        if code in text:
+            return "CNY" if code == "RMB" else code
+    if "\u5186" in text or "\u65e5\u5143" in text:
+        return "JPY"
+    return ""
+
+
+def currency_number_format(currency_code: str) -> str:
+    symbol = CURRENCY_SYMBOLS.get(currency_code, "")
+    decimals = "" if currency_code in {"JPY", "KRW"} else ".00"
+    return f"{symbol}#,##0{decimals}" if symbol else f"#,##0{decimals}"
 
 
 def normalize_match_text(value: object) -> str:
@@ -676,15 +709,15 @@ def classify_lifecycle_status(value: object) -> str:
     compact = re.sub(r"\s+", "", lower)
     if not compact:
         return ""
-    if any(token in compact for token in ["停产", "discontinued", "discontinue", "phaseout", "phase-out", "廃番"]):
+    if any(token in compact for token in ["\u505c\u4ea7", "\u5ee2\u68c4", "\u5e9f\u5f03", "discontinued", "discontinue", "phaseout", "phase-out"]):
         return "Discontinued / Phase Out"
-    if any(token in compact for token in ["renewal", "renew", "更新", "改版", "新版"]):
+    if any(token in compact for token in ["renewal", "renew", "\u66f4\u65b0", "\u6539\u7248", "\u65b0\u7248"]):
         return "Renewal"
-    if ("展架" in compact or "display" in compact or "tester" in compact) and any(token in compact for token in ["少", "low", "short", "不足"]):
+    if ("\u5c55\u67b6" in compact or "display" in compact or "tester" in compact) and any(token in compact for token in ["\u5c11", "low", "short", "\u4e0d\u8db3"]):
         return "Display Low Stock"
-    if ("展架" in compact or "display" in compact or "tester" in compact) and any(token in compact for token in ["无", "none", "no", "outofstock", "out-of-stock", "缺"]):
+    if ("\u5c55\u67b6" in compact or "display" in compact or "tester" in compact) and any(token in compact for token in ["\u65e0", "none", "no", "outofstock", "out-of-stock", "\u7f3a"]):
         return "Display No Stock"
-    if any(token in compact for token in ["new", "comingsoon", "coming", "新品"]):
+    if any(token in compact for token in ["new", "comingsoon", "coming", "\u65b0\u54c1"]):
         return "New / Coming Soon"
     return "Active / Review"
 
@@ -2414,14 +2447,6 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
                     if col in matched_purchase.columns:
                         enriched.at[idx, col] = float(pd.to_numeric(matched_purchase[col], errors="coerce").fillna(0).sum())
 
-    ordered_new_cols = CATALOGUE_ANALYSIS_COLS
-    original_cols = [col for col in catalogue_df.columns if col in enriched.columns]
-    appended_cols = [col for col in ordered_new_cols if col in enriched.columns]
-    other_cols = [col for col in enriched.columns if col not in original_cols + appended_cols + ["_match_sku", TOTAL_PO_COST_COL]]
-    append_data = enriched[["_match_sku"] + appended_cols + other_cols]
-    append_data = drop_all_empty_columns(append_data, [col for col in append_data.columns if "Sales Amount" in str(col)])
-    append_cols = [col for col in append_data.columns if col != "_match_sku"]
-
     wb = load_workbook(workbook_source)
     ws = wb.active
     header_row = None
@@ -2440,15 +2465,47 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
         raise ValueError("Could not find a SKU/JAN/Product Code column in the catalogue workbook.")
 
     generated_norm = {normalize_header(col) for col in CATALOGUE_ANALYSIS_COLS}
-    cols_to_delete = [
-        col_idx
-        for col_idx in range(1, ws.max_column + 1)
-        if normalize_header(ws.cell(header_row, col_idx).value) in generated_norm
-    ]
+    generated_terms = ["Sales Qty", "Profit", "Sales Margin", "Purchase Qty", "PO Cost", "Purchase Amount"]
+    cols_to_delete = []
+    for col_idx in range(1, ws.max_column + 1):
+        header_text = str(ws.cell(header_row, col_idx).value or "").replace("\n", " ").strip()
+        if normalize_header(header_text) in generated_norm:
+            cols_to_delete.append(col_idx)
+        elif re.match(r"^20(24|25|26)\s+", header_text) and any(term in header_text for term in generated_terms):
+            cols_to_delete.append(col_idx)
     for col_idx in sorted(cols_to_delete, reverse=True):
         ws.delete_cols(col_idx)
         if col_idx < sku_col_idx:
             sku_col_idx -= 1
+
+    rp_candidates = []
+    for col_idx in range(1, ws.max_column + 1):
+        header_text = str(ws.cell(header_row, col_idx).value or "").replace("\n", " ").strip()
+        normalized = normalize_header(header_text)
+        if "rp" not in normalized:
+            continue
+        currency = detect_currency_code(header_text)
+        if not currency:
+            continue
+        priority = 0 if currency not in {"USD", "CAD"} else 1
+        rp_candidates.append((priority, col_idx, currency))
+    if not rp_candidates:
+        raise ValueError("Could not find an RP currency column in the catalogue workbook, such as RP (JPY) or RP (USD).")
+    _, rp_price_col_idx, purchase_currency = sorted(rp_candidates, key=lambda item: (item[0], item[1]))[0]
+
+    ordered_new_cols = []
+    for year in [2024, 2025, 2026]:
+        qty_col = f"{year} Purchase Qty"
+        amount_col = f"{year} Purchase Amount ({purchase_currency})"
+        if qty_col not in enriched.columns:
+            enriched[qty_col] = 0
+        enriched[amount_col] = np.nan
+        ordered_new_cols += [qty_col, amount_col]
+    if "Matched Sales SKUs" not in enriched.columns:
+        enriched["Matched Sales SKUs"] = ""
+    append_cols = ordered_new_cols
+    lookup_cols = ["_match_sku", "Matched Sales SKUs"] + [col for col in append_cols if col in enriched.columns]
+    append_data = enriched[lookup_cols].copy()
 
     lookup_data = append_data.copy()
 
@@ -2460,12 +2517,8 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
 
     lookup_data["_lookup_sku"] = lookup_data.apply(row_lookup_codes, axis=1)
     lookup_data = lookup_data.explode("_lookup_sku")
-    if "SABC Type (2026)" in lookup_data.columns:
-        lookup_data["_sabc_rank"] = lookup_data["SABC Type (2026)"].map({"S": 0, "A": 1, "B": 2, "C": 3}).fillna(9)
-    else:
-        lookup_data["_sabc_rank"] = 9
-    lookup_data["_lookup_qty"] = pd.to_numeric(lookup_data.get("2026 Sales Qty", 0), errors="coerce").fillna(0)
-    lookup_data = lookup_data.sort_values(["_lookup_sku", "_sabc_rank", "_lookup_qty"], ascending=[True, True, False])
+    lookup_data["_lookup_qty"] = pd.to_numeric(lookup_data.get("2026 Purchase Qty", 0), errors="coerce").fillna(0)
+    lookup_data = lookup_data.sort_values(["_lookup_sku", "_lookup_qty"], ascending=[True, False])
     value_lookup = lookup_data.drop_duplicates("_lookup_sku").set_index("_lookup_sku")[append_cols].to_dict(orient="index")
     start_col = ws.max_column + 1
     header_style_source = ws.cell(header_row, sku_col_idx)
@@ -2488,27 +2541,32 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
             sub_cell.fill = copy(subheader_style_source.fill)
             sub_cell.border = copy(subheader_style_source.border)
             sub_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-        ws.column_dimensions[get_column_letter(start_col + offset)].width = min(max(len(str(col_name)) + 2, 14), 24)
+        ws.column_dimensions[get_column_letter(start_col + offset)].width = 18 if "Qty" in str(col_name) else 24
 
     for row_idx in range(header_row + 1, ws.max_row + 1):
         sku = normalize_sku(ws.cell(row_idx, sku_col_idx).value)
         if not sku or sku not in value_lookup:
             continue
         for offset, col_name in enumerate(append_cols):
-            value = value_lookup[sku].get(col_name, np.nan)
-            if pd.isna(value):
-                value = "" if any(token in str(col_name) for token in ["SABC Type", "Inventory Status", "Action", "Matched Sales SKUs"]) else 0
+            amount_match = re.match(r"^(20\d{2}) Purchase Amount \(", str(col_name))
+            if amount_match:
+                year = amount_match.group(1)
+                qty_offset = append_cols.index(f"{year} Purchase Qty")
+                qty_cell_ref = f"{get_column_letter(start_col + qty_offset)}{row_idx}"
+                value = f"={qty_cell_ref}*{get_column_letter(rp_price_col_idx)}{row_idx}"
+            else:
+                value = value_lookup[sku].get(col_name, 0)
+                if pd.isna(value):
+                    value = 0
             cell = ws.cell(row_idx, start_col + offset, value)
             style_source = ws.cell(row_idx, start_col - 1)
             if style_source.has_style:
                 cell._style = copy(style_source._style)
             cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-            if "Margin %" in str(col_name):
-                cell.number_format = "0.0%"
-            elif "($ CAD)" in str(col_name) or "PO Cost" in str(col_name):
-                cell.number_format = "$#,##0.00"
-            elif isinstance(value, (int, float)):
-                cell.number_format = "#,##0.00" if any(token in str(col_name) for token in ["Coverage", "Avg Monthly Sales"]) else "#,##0"
+            if "Purchase Amount" in str(col_name):
+                cell.number_format = currency_number_format(purchase_currency)
+            else:
+                cell.number_format = "#,##0"
 
     bio = BytesIO()
     wb.save(bio)
