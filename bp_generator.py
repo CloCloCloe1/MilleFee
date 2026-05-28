@@ -44,6 +44,23 @@ SALES_MARGIN_COL = "Sales Margin %"
 COST_PER_UNIT_COL = "PO Cost / Sales Qty ($ CAD)"
 PO_SALES_RATIO_COL = "PO Cost / Sales Amount"
 TOTAL_PO_COST_COL = "Total PO Cost ($ CAD)"
+CATALOGUE_ANALYSIS_COLS = [
+    *(f"{year} Sales Qty" for year in [2024, 2025, 2026]),
+    *(f"{year} Profit ($ CAD)" for year in [2024, 2025, 2026]),
+    *(f"{year} Sales Margin %" for year in [2024, 2025, 2026]),
+    *(f"{year} Purchase Qty" for year in [2024, 2025, 2026]),
+    *(f"{year} PO Cost ($ CAD)" for year in [2024, 2025, 2026]),
+    "Matched Sales SKUs",
+    "SABC Type (2026)",
+    "Available (2026)",
+    "Incoming (2026)",
+    "On Hand (2026)",
+    "Future Inventory (2026)",
+    "Avg Monthly Sales (2026)",
+    "Coverage (2026)",
+    "Inventory Status (2026)",
+    "Action (2026)",
+]
 
 
 @dataclass
@@ -2219,6 +2236,7 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
         return None
     pandas_source, workbook_source = materialize_excel_source(catalogue_file)
     catalogue_df = read_excel_with_detected_header(pandas_source)
+    catalogue_df = catalogue_df.drop(columns=[col for col in CATALOGUE_ANALYSIS_COLS if col in catalogue_df.columns], errors="ignore")
     sku_col = detect_column(catalogue_df, ["Product SKU", "SKU", "JAN", "Barcode", "Product Code", "Product Code Product Code", "Code"], label="Catalogue SKU")
     catalogue_product_col = detect_column(catalogue_df, ["Product name", "Product Name", "Product / Service", "Name", "Description"], required=False)
     catalogue_color_col = detect_column(catalogue_df, ["Color name", "Color Name", "Shade", "Shade Name", "Color"], required=False)
@@ -2402,27 +2420,7 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
                     if col in matched_purchase.columns:
                         enriched.at[idx, col] = float(pd.to_numeric(matched_purchase[col], errors="coerce").fillna(0).sum())
 
-    ordered_new_cols = []
-    for year in [2024, 2025, 2026]:
-        ordered_new_cols += [
-            f"{year} Sales Qty",
-            f"{year} Profit ($ CAD)",
-            f"{year} Sales Margin %",
-            f"{year} Purchase Qty",
-            f"{year} PO Cost ($ CAD)",
-        ]
-    ordered_new_cols += [
-        "Matched Sales SKUs",
-        "SABC Type (2026)",
-        "Available (2026)",
-        "Incoming (2026)",
-        "On Hand (2026)",
-        "Future Inventory (2026)",
-        "Avg Monthly Sales (2026)",
-        "Coverage (2026)",
-        "Inventory Status (2026)",
-        "Action (2026)",
-    ]
+    ordered_new_cols = CATALOGUE_ANALYSIS_COLS
     original_cols = [col for col in catalogue_df.columns if col in enriched.columns]
     appended_cols = [col for col in ordered_new_cols if col in enriched.columns]
     other_cols = [col for col in enriched.columns if col not in original_cols + appended_cols + ["_match_sku", TOTAL_PO_COST_COL]]
@@ -2446,6 +2444,17 @@ def generate_enriched_catalogue(catalogue_file: str | Path | BinaryIO | BytesIO 
             break
     if header_row is None or sku_col_idx is None:
         raise ValueError("Could not find a SKU/JAN/Product Code column in the catalogue workbook.")
+
+    generated_norm = {normalize_header(col) for col in CATALOGUE_ANALYSIS_COLS}
+    cols_to_delete = [
+        col_idx
+        for col_idx in range(1, ws.max_column + 1)
+        if normalize_header(ws.cell(header_row, col_idx).value) in generated_norm
+    ]
+    for col_idx in sorted(cols_to_delete, reverse=True):
+        ws.delete_cols(col_idx)
+        if col_idx < sku_col_idx:
+            sku_col_idx -= 1
 
     lookup_data = append_data.copy()
 
