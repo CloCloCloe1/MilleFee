@@ -12,6 +12,7 @@ from bp_generator import generate_enriched_catalogue, generate_outputs
 
 st.set_page_config(page_title="Beauty Brand BP Generator", page_icon="BP", layout="wide")
 
+OUTPUT_VERSION = "catalogue_purchase_amount_only_v1"
 
 ZH = "\u4e2d\u6587"
 
@@ -603,6 +604,11 @@ def bp_generator_page(t: dict, language: str):
     st.title(t["title"])
     st.caption(t["caption"])
 
+    if st.session_state.get("output_version") not in (None, OUTPUT_VERSION):
+        for key in ["result", "excel_bytes", "word_bytes", "enriched_catalogue_bytes", "output_version"]:
+            st.session_state.pop(key, None)
+        st.info(t["ready"])
+
     with st.sidebar:
         st.header(t["files"])
         st.caption(t["sales"])
@@ -660,6 +666,7 @@ def bp_generator_page(t: dict, language: str):
         st.session_state["excel_bytes"] = excel_bytes
         st.session_state["word_bytes"] = word_bytes
         st.session_state["enriched_catalogue_bytes"] = enriched_catalogue_bytes
+        st.session_state["output_version"] = OUTPUT_VERSION
 
     if "result" not in st.session_state:
         st.warning(t["ready"])
@@ -792,7 +799,7 @@ if "user" not in st.session_state:
 with st.sidebar:
     st.caption(f"{t['signed_in']}: {st.session_state['user']['username']} ({st.session_state['user']['role']})")
     if st.button(t["logout"], use_container_width=True):
-        for key in ["user", "result", "excel_bytes", "word_bytes", "enriched_catalogue_bytes"]:
+        for key in ["user", "result", "excel_bytes", "word_bytes", "enriched_catalogue_bytes", "output_version"]:
             st.session_state.pop(key, None)
         st.rerun()
 
