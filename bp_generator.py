@@ -25,7 +25,6 @@ from openpyxl.chart import LineChart, Reference
 from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.table import Table, TableStyleInfo
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -1562,11 +1561,6 @@ def write_df(ws, df: pd.DataFrame, table_name: str, percent_cols: Iterable[str] 
     rows = dataframe_to_rows(df)
     for row in rows:
         ws.append(row)
-    max_row, max_col = ws.max_row, ws.max_column
-    ref = f"A1:{get_column_letter(max_col)}{max_row}"
-    table = Table(displayName=table_name, ref=ref)
-    table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True, showColumnStripes=False)
-    ws.add_table(table)
     style_sheet(ws, percent_cols)
 
 
